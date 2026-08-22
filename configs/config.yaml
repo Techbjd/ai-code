@@ -1,0 +1,7 @@
+seed: 42
+paths: {raw_csv: data/raw/chembl_vegfr2.csv, test_csv: null, output_dir: runs}
+label: {threshold_nM: 500}
+split: {test_size: 0.1, val_frac_of_remaining: 0.111111}
+fingerprint: {radius: 2, n_bits: 2048}
+gnn: {hidden: 64, layers: 3, heads: 4, batch: 128, lr: 0.001, epochs: 200, patience: 15}
+hpo: {n_trials: 20}
