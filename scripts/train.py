@@ -109,7 +109,10 @@ def train_gnn(
         with torch.no_grad():
             for batch in test_loader:
                 batch = batch.to(device)
-                logits = model(batch.x, batch.edge_index, batch.batch)
+                if name == "mpnn":
+                    logits = model(batch.x, batch.edge_index, batch.edge_attr, batch.batch)
+                else:
+                    logits = model(batch.x, batch.edge_index, batch.batch)
                 test_probs.extend(torch.sigmoid(logits).squeeze().cpu().numpy())
                 test_true.extend(batch.y.squeeze().cpu().numpy().astype(int))
         return classification_metrics(test_true, test_probs)
