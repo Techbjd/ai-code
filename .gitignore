@@ -10,10 +10,9 @@ build/
 *.egg-info/
 *.pt
 *.pkl
-data/
 runs/
 .env
-.venv
-venv/
+.venv/
+env/
 .env.*
 .DS_Store
