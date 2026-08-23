@@ -215,6 +215,9 @@ def main() -> int:
     parser.add_argument("--config", default="configs/config.yaml")
     parser.add_argument("--model", default="all", choices=["gcn", "gat", "mpnn", "rf", "svm", "xgb", "all"])
     parser.add_argument("--hpo", action="store_true", help="Run Optuna HPO for GNNs")
+    parser.add_argument("--train-csv", help="Pre-processed train CSV (skips preprocessing)")
+    parser.add_argument("--val-csv", help="Pre-processed val CSV")
+    parser.add_argument("--test-csv", help="Pre-processed test CSV")
     args = parser.parse_args()
 
     # GPU enforcement at entrypoint (paper requirement: GPU-only training)
@@ -223,16 +226,22 @@ def main() -> int:
     cfg = yaml.safe_load(Path(args.config).read_text())
     seed_everything(cfg["seed"])
 
-    raw_csv = Path(cfg["paths"]["raw_csv"])
-    if not raw_csv.exists():
-        print(f"Raw data not found: {raw_csv}. Run scripts/download_data.py first.", file=sys.stderr)
-        return 1
+    if args.train_csv and args.val_csv and args.test_csv:
+        train_df = load_csv(args.train_csv)
+        val_df = load_csv(args.val_csv)
+        test_df = load_csv(args.test_csv)
+        print(f"Loaded pre-processed data: train={len(train_df)} val={len(val_df)} test={len(test_df)}")
+    else:
+        raw_csv = Path(cfg["paths"]["raw_csv"])
+        if not raw_csv.exists():
+            print(f"Raw data not found: {raw_csv}. Run scripts/download_data.py first.", file=sys.stderr)
+            return 1
 
-    df = load_csv(raw_csv)
-    df = preprocess(df)
-    train_df, val_df, test_df = split(df, seed=cfg["seed"])
+        df = load_csv(raw_csv)
+        df = preprocess(df)
+        train_df, val_df, test_df = split(df, seed=cfg["seed"])
 
-    print(f"Data: train={len(train_df)} val={len(val_df)} test={len(test_df)}")
+        print(f"Data: train={len(train_df)} val={len(val_df)} test={len(test_df)}")
 
     models_to_run = [args.model] if args.model != "all" else ["rf", "svm", "xgb", "gcn", "gat", "mpnn"]
     results = {}
