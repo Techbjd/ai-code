@@ -27,12 +27,13 @@ def _mean_pool(h: Tensor, node_batch: Tensor, num_graphs: int) -> Tensor:
 
 
 class GCN(nn.Module):
-    def __init__(self, in_dim: int = 28, hidden: int = 64, layers: int = 3, out_dim: int = 1):
+    def __init__(self, in_dim: int = 28, hidden: int = 64, layers: int = 3, out_dim: int = 1, dropout: float = 0.2):
         super().__init__()
-        self.init_kwargs = {"in_dim": in_dim, "hidden": hidden, "layers": layers, "out_dim": out_dim}
+        self.init_kwargs = {"in_dim": in_dim, "hidden": hidden, "layers": layers, "out_dim": out_dim, "dropout": dropout}
         self.input = nn.Linear(in_dim, hidden)
         self.linears = nn.ModuleList([nn.Linear(hidden, hidden) for _ in range(layers)])
         self.norms = nn.ModuleList([nn.LayerNorm(hidden) for _ in range(layers)])
+        self.dropouts = nn.ModuleList([nn.Dropout(dropout) for _ in range(layers)])
         self.output = nn.Linear(hidden, out_dim)
 
     def forward(self, batch_dict: GraphBatch, device: str | torch.device = "cpu") -> Tensor:
@@ -47,19 +48,19 @@ class GCN(nn.Module):
         deg = torch.zeros(num_nodes, device=device).index_add_(0, dst, torch.ones_like(dst, dtype=torch.float)) + 1.0
         norm = deg.rsqrt()
 
-        for lin, ln in zip(self.linears, self.norms):
+        for lin, ln, drop in zip(self.linears, self.norms, self.dropouts):
             m = h[src] * norm[src].unsqueeze(1) * norm[dst].unsqueeze(1)
             agg = torch.zeros_like(h).index_add_(0, dst, m)
-            h = F.relu(ln(lin(h + agg)))
+            h = F.relu(drop(ln(lin(h + agg))))
 
         pooled = _mean_pool(h, node_batch, num_graphs)
         return self.output(pooled)
 
 
 class GAT(nn.Module):
-    def __init__(self, in_dim: int = 28, hidden: int = 64, layers: int = 3, heads: int = 4, out_dim: int = 1):
+    def __init__(self, in_dim: int = 28, hidden: int = 64, layers: int = 3, heads: int = 4, out_dim: int = 1, dropout: float = 0.2):
         super().__init__()
-        self.init_kwargs = {"in_dim": in_dim, "hidden": hidden, "layers": layers, "heads": heads, "out_dim": out_dim}
+        self.init_kwargs = {"in_dim": in_dim, "hidden": hidden, "layers": layers, "heads": heads, "out_dim": out_dim, "dropout": dropout}
         assert hidden % heads == 0, "hidden must be divisible by heads"
         self.head_dim = hidden // heads
         self.num_layers = layers
@@ -70,6 +71,7 @@ class GAT(nn.Module):
         self.attn_src = nn.ModuleList([nn.Linear(hidden, 1, bias=False) for _ in range(layers)])
         self.attn_dst = nn.ModuleList([nn.Linear(hidden, 1, bias=False) for _ in range(layers)])
         self.norms = nn.ModuleList([nn.LayerNorm(hidden) for _ in range(layers)])
+        self.dropouts = nn.ModuleList([nn.Dropout(dropout) for _ in range(layers)])
         self.out_proj = nn.Linear(self.head_dim, hidden)
         self.output = nn.Linear(hidden, out_dim)
 
@@ -104,19 +106,19 @@ class GAT(nn.Module):
                 h = self.out_proj(agg.mean(dim=1))
             else:
                 h = agg.view(num_nodes, -1)
-                h = F.elu(self.norms[i](h))
+                h = F.elu(self.dropouts[i](self.norms[i](h)))
 
         pooled = _mean_pool(h, node_batch, num_graphs)
         return self.output(pooled)
 
 
 class MPNN(nn.Module):
-    def __init__(self, in_dim: int = 32, hidden: int = 64, layers: int = 3, out_dim: int = 1, edge_dim: int = 11):
+    def __init__(self, in_dim: int = 32, hidden: int = 64, layers: int = 3, out_dim: int = 1, edge_dim: int = 11, dropout: float = 0.2):
         super().__init__()
-        self.init_kwargs = {"in_dim": in_dim, "hidden": hidden, "layers": layers, "out_dim": out_dim, "edge_dim": edge_dim}
+        self.init_kwargs = {"in_dim": in_dim, "hidden": hidden, "layers": layers, "out_dim": out_dim, "edge_dim": edge_dim, "dropout": dropout}
         self.input = nn.Linear(in_dim, hidden)
         self.edge_mlps = nn.ModuleList(
-            [nn.Sequential(nn.Linear(2 * hidden + edge_dim, hidden), nn.ReLU(), nn.Linear(hidden, hidden)) for _ in range(layers)]
+            [nn.Sequential(nn.Linear(2 * hidden + edge_dim, hidden), nn.ReLU(), nn.Dropout(dropout), nn.Linear(hidden, hidden)) for _ in range(layers)]
         )
         self.grus = nn.ModuleList([nn.GRUCell(hidden, hidden) for _ in range(layers)])
         self.output = nn.Linear(hidden, out_dim)
@@ -149,14 +151,15 @@ def build_model(
     heads: int = 4,
     out_dim: int = 1,
     edge_dim: int = 11,
+    dropout: float = 0.2,
 ) -> nn.Module:
     name = name.lower()
     if name == "gcn":
-        return GCN(in_dim=in_dim, hidden=hidden, layers=layers, out_dim=out_dim)
+        return GCN(in_dim=in_dim, hidden=hidden, layers=layers, out_dim=out_dim, dropout=dropout)
     if name == "gat":
-        return GAT(in_dim=in_dim, hidden=hidden, layers=layers, heads=heads, out_dim=out_dim)
+        return GAT(in_dim=in_dim, hidden=hidden, layers=layers, heads=heads, out_dim=out_dim, dropout=dropout)
     if name == "mpnn":
-        return MPNN(in_dim=in_dim, hidden=hidden, layers=layers, out_dim=out_dim, edge_dim=edge_dim)
+        return MPNN(in_dim=in_dim, hidden=hidden, layers=layers, out_dim=out_dim, edge_dim=edge_dim, dropout=dropout)
     raise ValueError(f"Unknown GNN model: {name}. Available: gcn, gat, mpnn")
 
 

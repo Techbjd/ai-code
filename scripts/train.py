@@ -130,16 +130,17 @@ def train_gnn(
         from vegfr2.hpo import optimize_gnn
 
         def objective(trial):
-            hidden = trial.suggest_categorical("hidden", [32, 64, 128])
-            lr = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
-            layers = trial.suggest_int("layers", 2, 4)
+            hidden = trial.suggest_categorical("hidden", [64, 128, 256])
+            lr = trial.suggest_float("lr", 1e-5, 1e-2, log=True)
+            layers = trial.suggest_int("layers", 2, 5)
             heads = trial.suggest_categorical("heads", [2, 4, 8]) if name == "gat" else 1
+            dropout = trial.suggest_float("dropout", 0.1, 0.5)
 
-            model = build_model(name, in_dim=32, hidden=hidden, layers=layers, heads=heads, edge_dim=11).to(device)
-            opt = torch.optim.AdamW(model.parameters(), lr=lr)
+            model = build_model(name, in_dim=32, hidden=hidden, layers=layers, heads=heads, edge_dim=11, dropout=dropout).to(device)
+            opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
             loss_fn = nn.BCEWithLogitsLoss()
 
-            for _ in range(20):
+            for _ in range(30):
                 model.train()
                 for batch in train_loader:
                     batch_tr = cast(GraphBatch, {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()})
@@ -170,10 +171,16 @@ def train_gnn(
     lr = cfg["gnn"]["lr"]
     epochs = cfg["gnn"]["epochs"]
     patience = cfg["gnn"]["patience"]
+    dropout = cfg["gnn"].get("dropout", 0.2)
 
-    model = build_model(name, in_dim=32, hidden=hidden, layers=layers, heads=heads, edge_dim=11).to(device)
-    opt = torch.optim.AdamW(model.parameters(), lr=lr)
-    loss_fn = nn.BCEWithLogitsLoss()
+    model = build_model(name, in_dim=32, hidden=hidden, layers=layers, heads=heads, edge_dim=11, dropout=dropout).to(device)
+    opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs, eta_min=1e-6)
+
+    n_active = train_df["active"].sum()
+    n_inactive = len(train_df) - n_active
+    pos_weight = torch.tensor([n_inactive / n_active], device=device)
+    loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
     best_auc = -1.0
     best_path = output_dir / f"{name}/best.pt"
@@ -207,6 +214,8 @@ def train_gnn(
 
         val_metrics = classification_metrics(val_true, val_probs)
         val_auc = val_metrics.get("auc") or 0.0
+
+        scheduler.step()
 
         if val_auc > best_auc:
             best_auc = val_auc
