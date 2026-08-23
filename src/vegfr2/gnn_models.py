@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
+import numpy as np
 import torch
 from torch import Tensor, nn
 import torch.nn.functional as F
+import torch.utils.data
 
+from vegfr2.features import collate_graphs, mol_to_graph
 from vegfr2.types import GraphBatch
 
 
@@ -173,3 +177,141 @@ def load_checkpoint(path: str | Path, device: str | torch.device = "cpu") -> nn.
     model.load_state_dict(ckpt["model_state"])
     model.to(device).eval()
     return model
+
+
+class GraphDataset(torch.utils.data.Dataset):
+    def __init__(self, smiles: list[str], labels: list[int]):
+        self.graphs = [mol_to_graph(s) for s in smiles]
+        self.labels = labels
+
+    def __len__(self) -> int:
+        return len(self.graphs)
+
+    def __getitem__(self, idx: int):
+        return self.graphs[idx], self.labels[idx]
+
+
+def train_gnn_model(
+    name: str,
+    train_smiles: list[str],
+    train_labels: list[int],
+    val_smiles: list[str] | None = None,
+    val_labels: list[int] | None = None,
+    hidden: int = 64,
+    layers: int = 3,
+    heads: int = 4,
+    lr: float = 0.001,
+    batch_size: int = 128,
+    epochs: int = 200,
+    patience: int = 15,
+    seed: int = 42,
+    device: str | torch.device = "cuda",
+) -> nn.Module:
+    """Train a GNN model (GCN, GAT, MPNN) on SMILES data.
+    
+    Args:
+        name: Model name ('gcn', 'gat', 'mpnn')
+        train_smiles: List of training SMILES
+        train_labels: List of training labels (0/1)
+        val_smiles: Optional validation SMILES
+        val_labels: Optional validation labels
+        hidden: Hidden dimension
+        layers: Number of layers
+        heads: Number of attention heads (GAT only)
+        lr: Learning rate
+        batch_size: Batch size
+        epochs: Max epochs
+        patience: Early stopping patience
+        seed: Random seed
+        device: Device to train on
+        
+    Returns:
+        Trained model
+    """
+    torch.manual_seed(seed)
+    device = torch.device(device)
+    
+    train_ds = GraphDataset(train_smiles, train_labels)
+    train_loader = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, shuffle=True, collate_fn=collate_graphs)
+    
+    if val_smiles is not None:
+        val_ds = GraphDataset(val_smiles, val_labels)
+        val_loader = torch.utils.data.DataLoader(val_ds, batch_size=batch_size, shuffle=False, collate_fn=collate_graphs)
+    else:
+        val_loader = None
+    
+    model = build_model(name, in_dim=32, hidden=hidden, layers=layers, heads=heads, edge_dim=11).to(device)
+    opt = torch.optim.AdamW(model.parameters(), lr=lr)
+    loss_fn = nn.BCEWithLogitsLoss()
+    
+    best_auc = -1.0
+    best_state = None
+    wait = 0
+    
+    for epoch in range(1, epochs + 1):
+        model.train()
+        for batch in train_loader:
+            batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+            logits = model(batch, device)
+            loss = loss_fn(logits.squeeze(), batch["labels"].squeeze())
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+        
+        if val_loader is not None:
+            model.eval()
+            val_probs = []
+            val_true = []
+            with torch.no_grad():
+                for batch in val_loader:
+                    batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+                    logits = model(batch, device)
+                    val_probs.extend(torch.sigmoid(logits).squeeze().cpu().numpy())
+                    val_true.extend(batch["labels"].squeeze().cpu().numpy().astype(int))
+            
+            from vegfr2.metrics import classification_metrics
+            metrics = classification_metrics(val_true, val_probs)
+            val_auc = metrics.get("auc") or 0.0
+            
+            if val_auc > best_auc:
+                best_auc = val_auc
+                best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+                wait = 0
+            else:
+                wait += 1
+                if wait >= patience:
+                    break
+    
+    if best_state is not None:
+        model.load_state_dict(best_state)
+    
+    return model
+
+
+def predict_gnn_model(model: nn.Module, smiles: list[str], batch_size: int = 256, device: str | torch.device = "cuda") -> np.ndarray:
+    """Predict probabilities for SMILES using trained GNN.
+    
+    Args:
+        model: Trained GNN model
+        smiles: List of SMILES strings
+        batch_size: Batch size for inference
+        device: Device for inference
+        
+    Returns:
+        Array of probabilities (0-1)
+    """
+    import numpy as np
+    device = torch.device(device)
+    model.eval()
+    
+    ds = GraphDataset(smiles, [0] * len(smiles))
+    loader = torch.utils.data.DataLoader(ds, batch_size=batch_size, shuffle=False, collate_fn=collate_graphs)
+    
+    probs = []
+    with torch.no_grad():
+        for batch in loader:
+            batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+            logits = model(batch, device)
+            probs.extend(torch.sigmoid(logits).squeeze().cpu().numpy())
+    
+    return np.array(probs)
