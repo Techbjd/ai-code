@@ -41,7 +41,7 @@ def install_deps():
     """Install dependencies."""
     cmds = [
         "pip install -q torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118",
-        "pip install -q numpy pandas pyyaml scikit-learn xgboost rdkit-pypi optuna",
+        "pip install -q numpy pandas pyyaml scikit-learn xgboost rdkit optuna",
         "pip install -e . -q",
     ]
     for cmd in cmds:

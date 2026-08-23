@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vegfr2"
+version = "0.1.0"
+description = "VEGFR2 activity prediction with ML and GNN models"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0",
+    "numpy>=1.24",
+    "pandas>=2.0",
+    "pyyaml>=6.0",
+    "scikit-learn>=1.3",
+    "xgboost>=2.0",
+    "rdkit>=2023.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "optuna>=3.4",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["vegfr2*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
