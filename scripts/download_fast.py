@@ -43,6 +43,12 @@ def download_chembl(out_path: Path) -> int:
 
         page_rows = []
         for act in activities:
+            # Filter: only exact IC50 values (standard_relation "=") and standard_flag=1
+            if act.get("standard_relation") != "=":
+                continue
+            if act.get("standard_flag") != 1:
+                continue
+                
             smiles = act.get("canonical_smiles")
             val = act.get("standard_value")
             if not smiles or val is None:
