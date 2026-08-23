@@ -14,8 +14,22 @@ SYMBOL_CHOICES: list[str] = ATOM_SYMBOLS[:11] + ['other']
 HYBRIDIZATIONS: list[str] = ['S', 'SP', 'SP2', 'SP3']
 DEGREE_SLOTS: list[int] = list(range(7))
 CHARGE_CHOICES: list[int] = [-1, 0, 1]
-ATOM_FEAT_DIM: int = 28
-BOND_FEAT_DIM: int = 5
+CHIRAL_TAGS: list[str] = [
+    'CHI_UNSPECIFIED',
+    'CHI_TETRAHEDRAL_CW',
+    'CHI_TETRAHEDRAL_CCW',
+    'CHI_OTHER',
+]
+BOND_STEREO: list[str] = [
+    'STEREONONE',
+    'STEREOANY',
+    'STEREOZ',
+    'STEREOE',
+    'STEREOCIS',
+    'STEREOTRANS',
+]
+ATOM_FEAT_DIM: int = 32
+BOND_FEAT_DIM: int = 11
 
 
 def _one_hot(value: object, choices: Sequence[object]) -> list[int]:
@@ -47,12 +61,17 @@ def _atom_features(atom: Chem.Atom) -> list[float]:
         hybridization if hybridization in HYBRIDIZATIONS else 'other',
         HYBRIDIZATIONS + ['other'],
     )
+    chiral_tag = str(atom.GetChiralTag())
+    chiral_block = _one_hot(
+        chiral_tag if chiral_tag in CHIRAL_TAGS else 'CHI_OTHER', CHIRAL_TAGS
+    )
     features = (
         symbol_block
         + degree_block
         + charge_block
         + aromatic_block
         + hybridization_block
+        + chiral_block
     )
     assert len(features) == ATOM_FEAT_DIM, f'expected {ATOM_FEAT_DIM} atom features'
     return features
@@ -60,17 +79,21 @@ def _atom_features(atom: Chem.Atom) -> list[float]:
 
 def _bond_features(bond: Chem.Bond) -> list[float]:
     btype = bond.GetBondType()
+    stereo = str(bond.GetStereo())
+    stereo_block = _one_hot(
+        stereo if stereo in BOND_STEREO else 'STEREONONE', BOND_STEREO
+    )
     return [
         int(btype == Chem.BondType.SINGLE),
         int(btype == Chem.BondType.DOUBLE),
         int(btype == Chem.BondType.TRIPLE),
         int(btype == Chem.BondType.AROMATIC),
         int(bond.GetIsConjugated()),
-    ]
+    ] + stereo_block
 
 
 def mol_to_graph(smiles: str) -> dict[str, object]:
-    """Build a bidirectional-edge molecular graph with 28-dim node and 5-dim edge features."""
+    """Build a bidirectional-edge molecular graph with 32-dim node and 11-dim edge features."""
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         raise ValueError(f'Invalid SMILES: {smiles}')

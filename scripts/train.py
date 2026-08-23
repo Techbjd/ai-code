@@ -80,7 +80,7 @@ def train_gnn(
             layers = trial.suggest_int("layers", 2, 4)
             heads = trial.suggest_categorical("heads", [2, 4, 8]) if name == "gat" else 1
 
-            model = build_model(name, in_dim=28, hidden=hidden, layers=layers, heads=heads).to(device)
+            model = build_model(name, in_dim=32, hidden=hidden, layers=layers, heads=heads, edge_dim=11).to(device)
             opt = torch.optim.AdamW(model.parameters(), lr=lr)
             loss_fn = nn.BCEWithLogitsLoss()
 
@@ -116,7 +116,7 @@ def train_gnn(
     epochs = cfg["gnn"]["epochs"]
     patience = cfg["gnn"]["patience"]
 
-    model = build_model(name, in_dim=28, hidden=hidden, layers=layers, heads=heads).to(device)
+    model = build_model(name, in_dim=32, hidden=hidden, layers=layers, heads=heads, edge_dim=11).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=lr)
     loss_fn = nn.BCEWithLogitsLoss()
 

@@ -107,12 +107,12 @@ class GAT(nn.Module):
 
 
 class MPNN(nn.Module):
-    def __init__(self, in_dim: int = 28, hidden: int = 64, layers: int = 3, out_dim: int = 1):
+    def __init__(self, in_dim: int = 32, hidden: int = 64, layers: int = 3, out_dim: int = 1, edge_dim: int = 11):
         super().__init__()
-        self.init_kwargs = {"in_dim": in_dim, "hidden": hidden, "layers": layers, "out_dim": out_dim}
+        self.init_kwargs = {"in_dim": in_dim, "hidden": hidden, "layers": layers, "out_dim": out_dim, "edge_dim": edge_dim}
         self.input = nn.Linear(in_dim, hidden)
         self.edge_mlps = nn.ModuleList(
-            [nn.Sequential(nn.Linear(2 * hidden + 5, hidden), nn.ReLU(), nn.Linear(hidden, hidden)) for _ in range(layers)]
+            [nn.Sequential(nn.Linear(2 * hidden + edge_dim, hidden), nn.ReLU(), nn.Linear(hidden, hidden)) for _ in range(layers)]
         )
         self.grus = nn.ModuleList([nn.GRUCell(hidden, hidden) for _ in range(layers)])
         self.output = nn.Linear(hidden, out_dim)
@@ -139,11 +139,12 @@ class MPNN(nn.Module):
 
 def build_model(
     name: str,
-    in_dim: int = 28,
+    in_dim: int = 32,
     hidden: int = 64,
     layers: int = 3,
     heads: int = 4,
     out_dim: int = 1,
+    edge_dim: int = 11,
 ) -> nn.Module:
     name = name.lower()
     if name == "gcn":
@@ -151,7 +152,7 @@ def build_model(
     if name == "gat":
         return GAT(in_dim=in_dim, hidden=hidden, layers=layers, heads=heads, out_dim=out_dim)
     if name == "mpnn":
-        return MPNN(in_dim=in_dim, hidden=hidden, layers=layers, out_dim=out_dim)
+        return MPNN(in_dim=in_dim, hidden=hidden, layers=layers, out_dim=out_dim, edge_dim=edge_dim)
     raise ValueError(f"Unknown GNN model: {name}. Available: gcn, gat, mpnn")
 
 

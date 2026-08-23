@@ -20,7 +20,7 @@ def batch():
 @pytest.mark.parametrize("name", ["gcn", "gat", "mpnn"])
 def test_gnn_forward_backward(name, batch):
     """Every GNN produces [B, 1] logits and has finite backward gradients."""
-    model = build_model(name, in_dim=28, hidden=32, layers=2, heads=2)
+    model = build_model(name, in_dim=32, hidden=32, layers=2, heads=2)
     logits = model(batch, device="cpu")
 
     assert logits.shape == (3, 1)
@@ -37,7 +37,7 @@ def test_gnn_forward_backward(name, batch):
 @pytest.mark.parametrize("name", ["gcn", "gat", "mpnn"])
 def test_gnn_checkpoint_roundtrip(name, batch, tmp_path):
     """Saving and loading checkpoint reproduces identical predictions."""
-    model = build_model(name, in_dim=28, hidden=32, layers=2, heads=2)
+    model = build_model(name, in_dim=32, hidden=32, layers=2, heads=2)
     model.eval()
     with torch.no_grad():
         orig_logits = model(batch, device="cpu")
