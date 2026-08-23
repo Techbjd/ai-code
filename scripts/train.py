@@ -59,8 +59,45 @@ def train_gnn(
     device: torch.device,
     output_dir: Path,
     do_hpo: bool = False,
+    use_pyg: bool = False,
 ) -> dict:
     seed_everything(cfg["seed"])
+
+    if use_pyg:
+        from vegfr2.gnn_pyg import train_gnn_pyg, save_checkpoint as save_checkpoint_pyg
+        print(f"  Using PyTorch Geometric implementation for {name.upper()}")
+        model = train_gnn_pyg(
+            name=name,
+            train_smiles=train_df["smiles"].tolist(),
+            train_labels=train_df["active"].astype(int).tolist(),
+            val_smiles=val_df["smiles"].tolist(),
+            val_labels=val_df["active"].astype(int).tolist(),
+            hidden=cfg["gnn"]["hidden"],
+            layers=cfg["gnn"]["layers"],
+            heads=cfg["gnn"]["heads"],
+            lr=cfg["gnn"]["lr"],
+            batch_size=cfg["gnn"]["batch"],
+            epochs=cfg["gnn"]["epochs"],
+            patience=cfg["gnn"]["patience"],
+            seed=cfg["seed"],
+            device=device,
+        )
+        best_path = output_dir / f"{name}/best.pt"
+        best_path.parent.mkdir(parents=True, exist_ok=True)
+        save_checkpoint_pyg(model, best_path)
+
+        model.eval()
+        test_probs: list[float] = []
+        test_true: list[int] = []
+        test_ds = GraphDataset(test_df["smiles"].tolist(), test_df["active"].astype(int).tolist())
+        test_loader = torch.utils.data.DataLoader(test_ds, batch_size=cfg["gnn"]["batch"], shuffle=False, collate_fn=collate_batch)
+        with torch.no_grad():
+            for batch in test_loader:
+                batch_te = cast(GraphBatch, {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()})
+                logits = model(batch_te, device)
+                test_probs.extend(torch.sigmoid(logits).squeeze().cpu().numpy())
+                test_true.extend(batch_te["labels"].squeeze().cpu().numpy().astype(int))
+        return classification_metrics(test_true, test_probs)
 
     train_ds = GraphDataset(train_df["smiles"].tolist(), train_df["active"].astype(int).tolist())
     val_ds = GraphDataset(val_df["smiles"].tolist(), val_df["active"].astype(int).tolist())
@@ -218,6 +255,7 @@ def main() -> int:
     parser.add_argument("--train-csv", help="Pre-processed train CSV (skips preprocessing)")
     parser.add_argument("--val-csv", help="Pre-processed val CSV")
     parser.add_argument("--test-csv", help="Pre-processed test CSV")
+    parser.add_argument("--pyg", action="store_true", help="Use PyTorch Geometric GNN implementations")
     args = parser.parse_args()
 
     # GPU enforcement at entrypoint (paper requirement: GPU-only training)
@@ -252,7 +290,7 @@ def main() -> int:
         if name in {"rf", "svm", "xgb"}:
             results[name] = train_ml(name, train_df, val_df, test_df, cfg, output_dir)
         else:
-            results[name] = train_gnn(name, train_df, val_df, test_df, cfg, device, output_dir, do_hpo=args.hpo)
+            results[name] = train_gnn(name, train_df, val_df, test_df, cfg, device, output_dir, do_hpo=args.hpo, use_pyg=args.pyg)
 
     # Save results summary
     results_path = output_dir / "results.json"
