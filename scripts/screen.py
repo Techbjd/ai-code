@@ -35,7 +35,7 @@ def screen_gnn(model_path: str, library_df: pd.DataFrame, batch_size: int, devic
                     probs_all.append(np.nan)
             if graphs:
                 batch = collate_graphs(graphs, [0] * len(graphs))
-                batch = {k: v.to(device) for k, v in batch.items()}
+                batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
                 logits = model(batch, device)
                 batch_probs = torch.sigmoid(logits).squeeze().cpu().numpy()
                 for j, idx in enumerate(valid_idx):
