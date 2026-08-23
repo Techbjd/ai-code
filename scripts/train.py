@@ -50,6 +50,20 @@ def collate_batch(batch: list[tuple[dict, int]]) -> GraphBatch:
     return cast(GraphBatch, collate_graphs(list(graphs), list(labels)))
 
 
+class _PyGDataset(torch.utils.data.Dataset):
+    def __init__(self, smiles, labels):
+        from torch_geometric.data import Data
+        self.data_list = []
+        for s, y in zip(smiles, labels):
+            g = mol_to_graph(s)
+            data = Data(x=g["node_feats"], edge_index=g["edge_index"], edge_attr=g["edge_feats"], y=torch.tensor([y], dtype=torch.float32))
+            self.data_list.append(data)
+    def __len__(self):
+        return len(self.data_list)
+    def __getitem__(self, idx):
+        return self.data_list[idx]
+
+
 def train_gnn(
     name: str,
     train_df,
@@ -86,17 +100,18 @@ def train_gnn(
         best_path.parent.mkdir(parents=True, exist_ok=True)
         save_checkpoint_pyg(model, best_path)
 
-        model.eval()
+        from torch_geometric.loader import DataLoader as PyGLoader
+        test_ds_pyg = _PyGDataset(test_df["smiles"].tolist(), test_df["active"].astype(int).tolist())
+        test_loader = PyGLoader(test_ds_pyg, batch_size=cfg["gnn"]["batch"], shuffle=False)
         test_probs: list[float] = []
         test_true: list[int] = []
-        test_ds = GraphDataset(test_df["smiles"].tolist(), test_df["active"].astype(int).tolist())
-        test_loader = torch.utils.data.DataLoader(test_ds, batch_size=cfg["gnn"]["batch"], shuffle=False, collate_fn=collate_batch)
+        model.eval()
         with torch.no_grad():
             for batch in test_loader:
-                batch_te = cast(GraphBatch, {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()})
-                logits = model(batch_te, device)
+                batch = batch.to(device)
+                logits = model(batch.x, batch.edge_index, batch.batch)
                 test_probs.extend(torch.sigmoid(logits).squeeze().cpu().numpy())
-                test_true.extend(batch_te["labels"].squeeze().cpu().numpy().astype(int))
+                test_true.extend(batch.y.squeeze().cpu().numpy().astype(int))
         return classification_metrics(test_true, test_probs)
 
     train_ds = GraphDataset(train_df["smiles"].tolist(), train_df["active"].astype(int).tolist())
