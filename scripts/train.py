@@ -87,7 +87,7 @@ def train_gnn(
             for _ in range(20):
                 model.train()
                 for batch in train_loader:
-                    batch_tr = cast(GraphBatch, {k: v.to(device) for k, v in batch.items()})
+                    batch_tr = cast(GraphBatch, {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()})
                     logits = model(batch_tr, device)
                     loss = loss_fn(logits.squeeze(), batch_tr["labels"].squeeze())
                     opt.zero_grad()
@@ -99,7 +99,7 @@ def train_gnn(
             val_true: list[int] = []
             with torch.no_grad():
                 for batch in val_loader:
-                    batch_v = cast(GraphBatch, {k: v.to(device) for k, v in batch.items()})
+                    batch_v = cast(GraphBatch, {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()})
                     logits = model(batch_v, device)
                     val_probs.extend(torch.sigmoid(logits).squeeze().cpu().numpy())
                     val_true.extend(batch_v["labels"].squeeze().cpu().numpy().astype(int))
@@ -129,7 +129,7 @@ def train_gnn(
         model.train()
         total_loss = 0.0
         for batch in train_loader:
-            batch_t = cast(GraphBatch, {k: v.to(device) for k, v in batch.items()})
+            batch_t = cast(GraphBatch, {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()})
             logits = model(batch_t, device)
             loss = loss_fn(logits.squeeze(), batch_t["labels"].squeeze())
             opt.zero_grad()
@@ -143,7 +143,7 @@ def train_gnn(
         val_loss = 0.0
         with torch.no_grad():
             for batch in val_loader:
-                batch_v = cast(GraphBatch, {k: v.to(device) for k, v in batch.items()})
+                batch_v = cast(GraphBatch, {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()})
                 logits = model(batch_v, device)
                 loss = loss_fn(logits.squeeze(), batch_v["labels"].squeeze())
                 val_loss += loss.item() * batch_v["num_graphs"]
@@ -173,7 +173,7 @@ def train_gnn(
     test_true: list[int] = []
     with torch.no_grad():
         for batch in test_loader:
-            batch_te = cast(GraphBatch, {k: v.to(device) for k, v in batch.items()})
+            batch_te = cast(GraphBatch, {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()})
             logits = best_model(batch_te, device)
             test_probs.extend(torch.sigmoid(logits).squeeze().cpu().numpy())
             test_true.extend(batch_te["labels"].squeeze().cpu().numpy().astype(int))
