@@ -16,3 +16,4 @@ runs/
 env/
 .env.*
 .DS_Store
+CONVERSATION_SUMMARY.md
