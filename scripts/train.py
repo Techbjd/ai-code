@@ -49,7 +49,8 @@ def seed_everything(seed: int) -> None:
 
 class GraphDataset(torch.utils.data.Dataset):
     def __init__(self, smiles: list[str], labels: list[int]):
-        self.graphs = [mol_to_graph(s) for s in smiles]
+        from vegfr2.features import mol_to_graph_with_fps
+        self.graphs = [mol_to_graph_with_fps(s, use_morgan=True, use_maccs=True) for s in smiles]
         self.labels = labels
 
     def __len__(self) -> int:
@@ -67,9 +68,10 @@ def collate_batch(batch: list[tuple[dict, int]]) -> GraphBatch:
 class _PyGDataset(torch.utils.data.Dataset):
     def __init__(self, smiles, labels):
         from torch_geometric.data import Data
+        from vegfr2.features import mol_to_graph_with_fps
         self.data_list = []
         for s, y in zip(smiles, labels):
-            g = mol_to_graph(s)
+            g = mol_to_graph_with_fps(s, use_morgan=True, use_maccs=True)
             data = Data(x=g["node_feats"], edge_index=g["edge_index"], edge_attr=g["edge_feats"], y=torch.tensor([y], dtype=torch.float32))
             self.data_list.append(data)
     def __len__(self):
@@ -422,7 +424,7 @@ COMBINED_MODEL_NAMES = {
 }
 
 ALL_ML_MODELS = ["rf", "svm", "xgb"]
-ALL_GNN_MODELS = ["gcn", "gat", "mpnn"]
+ALL_GNN_MODELS = ["gcn", "gat", "gatv2", "mpnn", "gin", "pna", "graph_transformer"]
 ALL_COMBINED_METHODS = list(COMBINED_MODEL_NAMES.keys())
 
 
@@ -430,9 +432,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Train VEGFR2 activity models")
     parser.add_argument("--config", default="configs/config.yaml")
     parser.add_argument("--model", default="all",
-                       choices=["gcn", "gat", "mpnn", "rf", "svm", "xgb",
-                               "morgan_maccs", "gnn_morgan", "gnn_morgan_maccs",
-                               "maccs_only", "gnn_only", "all"])
+                       choices=["gcn", "gat", "gatv2", "mpnn", "gin", "pna", "graph_transformer",
+                                "rf", "svm", "xgb",
+                                "morgan_maccs", "gnn_morgan", "gnn_morgan_maccs",
+                                "maccs_only", "gnn_only", "all"])
     parser.add_argument("--hpo", action="store_true", help="Run Optuna HPO for GNNs")
     parser.add_argument("--train-csv", help="Pre-processed train CSV (skips preprocessing)")
     parser.add_argument("--val-csv", help="Pre-processed val CSV")
@@ -467,7 +470,7 @@ def main() -> int:
 
         print(f"Data: train={len(train_df)} val={len(val_df)} test={len(test_df)}")
 
-    models_to_run = [args.model] if args.model != "all" else ["rf", "svm", "xgb", "gcn", "gat", "mpnn"]
+    models_to_run = [args.model] if args.model != "all" else ["rf", "svm", "xgb", "gcn", "gat", "gatv2", "mpnn", "gin", "pna", "graph_transformer"]
     results = {}
     output_dir = Path(cfg["paths"]["output_dir"])
 
@@ -475,7 +478,7 @@ def main() -> int:
         print(f"\n=== Training {name.upper()} ===")
         if name in {"rf", "svm", "xgb"}:
             results[name] = train_ml(name, train_df, val_df, test_df, cfg, output_dir)
-        elif name in {"gcn", "gat", "mpnn"}:
+        elif name in {"gcn", "gat", "gatv2", "mpnn", "gin", "pna", "graph_transformer"}:
             results[name] = train_gnn(name, train_df, val_df, test_df, cfg, device, output_dir, do_hpo=args.hpo, use_pyg=args.pyg)
         elif name in ALL_COMBINED_METHODS:
             # Combined feature methods use ML models on top
