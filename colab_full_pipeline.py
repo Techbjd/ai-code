@@ -149,6 +149,7 @@ def forward_model(model, model_name, batch):
 
 
 def train_gnn(model_name, train_df, val_df, test_df, device, epochs=100, patience=15):
+    import torch.nn as nn
     torch.manual_seed(42)
 
     train_loader = make_enriched_loader(
