@@ -22,19 +22,26 @@ How to use:
 import subprocess
 import sys
 
-def install(package):
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", package])
-
 print("Installing packages...")
-install("rdkit-pypi")
-install("torch_geometric")
-install("xgboost")
-install("optuna")
-install("scikit-learn")
-install("pandas")
-install("numpy")
-install("pyyaml")
-print("All packages installed!")
+
+# rdkit is pre-installed on Colab, skip if already available
+try:
+    from rdkit import Chem
+    print("  rdkit: already installed")
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "rdkit-pypi"])
+
+# Install packages one by one with error handling
+packages = ["torch_geometric", "xgboost", "optuna", "scikit-learn", "pandas", "numpy", "pyyaml"]
+for pkg in packages:
+    try:
+        __import__(pkg.replace("-", "_").split("[")[0])
+        print(f"  {pkg}: already installed")
+    except ImportError:
+        print(f"  Installing {pkg}...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", pkg])
+
+print("All packages ready!")
 
 # %%
 # @title 2. Clone Repository
