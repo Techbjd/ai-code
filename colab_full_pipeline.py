@@ -23,7 +23,7 @@ How to use:
 print("Installing packages...")
 
 # Install all packages via shell command (more reliable on Colab)
-!pip install -q rdkit torch_geometric xgboost optuna scikit-learn pandas numpy pyyaml
+%pip install -q rdkit torch_geometric xgboost optuna scikit-learn pandas numpy pyyaml
 
 print("All packages ready!")
 
@@ -49,6 +49,8 @@ print(f"Working directory: {os.getcwd()}")
 # %%
 # @title 3. Check GPU
 import torch
+import warnings
+warnings.filterwarnings("ignore", message=".*scatter.*")
 
 print(f"PyTorch version: {torch.__version__}")
 if torch.cuda.is_available():
@@ -164,8 +166,10 @@ def train_gnn(model_name, train_df, val_df, test_df, device, epochs=100, patienc
         test_df["smiles"].tolist(), test_df["active"].astype(int).tolist()
     )
 
+    # MPNN edge-MLP creates hidden^2 params per layer, reduce hidden for MPNN
+    hidden = 64 if model_name == "mpnn" else 128
     model = build_pyg_model(
-        model_name, in_dim=2246, hidden=128, layers=3, heads=8, dropout=0.3
+        model_name, in_dim=2246, hidden=hidden, layers=3, heads=8, dropout=0.3
     ).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"  Model: {model_name} ({n_params:,} params)")
