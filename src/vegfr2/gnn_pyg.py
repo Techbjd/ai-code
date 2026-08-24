@@ -52,6 +52,12 @@ def build_pyg_model(
     out_dim: int = 1,
     edge_dim: int = 11,
     dropout: float = 0.3,
+    jk: bool = True,
+    pooling: str = "concat",
+    towers: int = 4,
+    pre_layers: int = 1,
+    post_layers: int = 1,
+    concat: bool = True,
 ) -> nn.Module:
     """Instantiate a PyG model by name.
 
@@ -64,6 +70,8 @@ def build_pyg_model(
         out_dim: Output dimension.
         edge_dim: Edge feature dimension (used by MPNN, GraphTransformer).
         dropout: Dropout rate.
+        jk: Jumping Knowledge for GIN (concatenate all layer outputs).
+        pooling: Readout strategy for GIN ("concat", "mean", "max").
 
     Returns:
         An ``nn.Module`` ready for training.
@@ -82,13 +90,13 @@ def build_pyg_model(
         return MPNN_PyG(in_dim=in_dim, hidden=hidden, layers=layers, out_dim=out_dim, edge_dim=edge_dim, dropout=dropout)
     if name == "gin":
         from vegfr2.models.gin import GIN_PyG
-        return GIN_PyG(in_dim=in_dim, hidden=hidden, layers=layers, out_dim=out_dim, dropout=dropout)
+        return GIN_PyG(in_dim=in_dim, hidden=hidden, layers=layers, out_dim=out_dim, dropout=dropout, jk=jk, pooling=pooling)
     if name == "pna":
         from vegfr2.models.pna import PNA_PyG
-        return PNA_PyG(in_dim=in_dim, hidden=hidden, layers=layers, out_dim=out_dim, dropout=dropout)
+        return PNA_PyG(in_dim=in_dim, hidden=hidden, layers=layers, out_dim=out_dim, dropout=dropout, towers=towers, pre_layers=pre_layers, post_layers=post_layers)
     if name == "graph_transformer":
         from vegfr2.models.graph_transformer import GraphTransformer_PyG
-        return GraphTransformer_PyG(in_dim=in_dim, hidden=hidden, layers=layers, heads=heads, out_dim=out_dim, dropout=dropout, edge_dim=edge_dim)
+        return GraphTransformer_PyG(in_dim=in_dim, hidden=hidden, layers=layers, heads=heads, out_dim=out_dim, dropout=dropout, edge_dim=edge_dim, concat=concat)
     raise ValueError(f"Unknown model: {name}. Available: gcn, gat, gatv2, mpnn, gin, pna, graph_transformer")
 
 
