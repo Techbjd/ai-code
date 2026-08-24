@@ -13,7 +13,7 @@ from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 from torch_geometric.nn import GCNConv, GATConv, NNConv, global_mean_pool
 
-from vegfr2.features import mol_to_graph
+from vegfr2.features import mol_to_graph, mol_to_graph_with_fps
 from vegfr2.types import GraphBatch
 
 
@@ -128,6 +128,47 @@ class PyGDataset(torch.utils.data.Dataset):
         self.data_list = []
         for s, y in zip(smiles, labels):
             g = mol_to_graph(s)
+            data = Data(
+                x=g["node_feats"],
+                edge_index=g["edge_index"],
+                edge_attr=g["edge_feats"],
+                y=torch.tensor([y], dtype=torch.float32),
+            )
+            self.data_list.append(data)
+
+    def __len__(self) -> int:
+        return len(self.data_list)
+
+    def __getitem__(self, idx: int) -> Data:
+        return self.data_list[idx]
+
+
+class EnrichedPyGDataset(torch.utils.data.Dataset):
+    """Dataset that injects Morgan+MACCS fingerprints into graph nodes.
+    
+    Each atom node gets: [atom_features(32) | morgan(2048) | maccs(166)] = 2246 dims
+    This gives the GNN access to fingerprint knowledge during message passing.
+    """
+    def __init__(
+        self,
+        smiles: list[str],
+        labels: list[int],
+        use_morgan: bool = True,
+        use_maccs: bool = True,
+        morgan_radius: int = 2,
+        morgan_n_bits: int = 2048,
+        maccs_n_bits: int = 166,
+    ):
+        self.data_list = []
+        for s, y in zip(smiles, labels):
+            g = mol_to_graph_with_fps(
+                s,
+                use_morgan=use_morgan,
+                use_maccs=use_maccs,
+                morgan_radius=morgan_radius,
+                morgan_n_bits=morgan_n_bits,
+                maccs_n_bits=maccs_n_bits,
+            )
             data = Data(
                 x=g["node_feats"],
                 edge_index=g["edge_index"],
