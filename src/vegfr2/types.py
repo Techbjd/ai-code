@@ -10,9 +10,9 @@ from torch import Tensor
 
 class GraphBatch(TypedDict):
     """Batched molecular graph from collate_graphs."""
-    node_feats: Tensor          # [N, 28] node features
+    node_feats: Tensor          # [N, 32] node features
     edge_index: Tensor          # [2, E] edge connections
-    edge_feats: Tensor          # [E, 5] edge features
+    edge_feats: Tensor          # [E, 11] edge features
     node_batch: Tensor          # [N] graph index per node
     labels: Tensor              # [B, 1] labels per graph
     num_graphs: int             # number of graphs in batch
@@ -20,9 +20,9 @@ class GraphBatch(TypedDict):
 
 class GraphSample(TypedDict):
     """Single molecular graph from mol_to_graph."""
-    node_feats: Tensor          # [n_nodes, 28]
+    node_feats: Tensor          # [n_nodes, 32]
     edge_index: Tensor          # [2, n_edges]
-    edge_feats: Tensor          # [n_edges, 5]
+    edge_feats: Tensor          # [n_edges, 11]
     num_nodes: int              # number of nodes in this graph
 
 
