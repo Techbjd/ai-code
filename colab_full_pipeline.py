@@ -19,27 +19,11 @@ How to use:
 
 # %%
 # @title 1. Install Dependencies (run first)
-import subprocess
-import sys
 
 print("Installing packages...")
 
-# rdkit is pre-installed on Colab, skip if already available
-try:
-    from rdkit import Chem
-    print("  rdkit: already installed")
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "rdkit-pypi"])
-
-# Install packages one by one with error handling
-packages = ["torch_geometric", "xgboost", "optuna", "scikit-learn", "pandas", "numpy", "pyyaml"]
-for pkg in packages:
-    try:
-        __import__(pkg.replace("-", "_").split("[")[0])
-        print(f"  {pkg}: already installed")
-    except ImportError:
-        print(f"  Installing {pkg}...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", pkg])
+# Install all packages via shell command (more reliable on Colab)
+!pip install -q rdkit torch_geometric xgboost optuna scikit-learn pandas numpy pyyaml
 
 print("All packages ready!")
 
