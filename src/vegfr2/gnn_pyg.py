@@ -112,14 +112,15 @@ def build_pyg_model(
     heads: int = 4,
     out_dim: int = 1,
     edge_dim: int = 11,
+    dropout: float = 0.3,
 ) -> nn.Module:
     name = name.lower()
     if name == "gcn":
-        return GCN_PyG(in_dim=in_dim, hidden=hidden, layers=layers, out_dim=out_dim)
+        return GCN_PyG(in_dim=in_dim, hidden=hidden, layers=layers, out_dim=out_dim, dropout=dropout)
     if name == "gat":
-        return GAT_PyG(in_dim=in_dim, hidden=hidden, layers=layers, heads=heads, out_dim=out_dim)
+        return GAT_PyG(in_dim=in_dim, hidden=hidden, layers=layers, heads=heads, out_dim=out_dim, dropout=dropout)
     if name == "mpnn":
-        return MPNN_PyG(in_dim=in_dim, hidden=hidden, layers=layers, out_dim=out_dim, edge_dim=edge_dim)
+        return MPNN_PyG(in_dim=in_dim, hidden=hidden, layers=layers, out_dim=out_dim, edge_dim=edge_dim, dropout=dropout)
     raise ValueError(f"Unknown model: {name}. Available: gcn, gat, mpnn")
 
 
