@@ -112,12 +112,19 @@ def make_fused_loader(smiles_list, labels, fps, batch_size=128, shuffle=False):
                 edge_index=g["edge_index"],
                 edge_attr=g["edge_feats"],
                 y=torch.tensor([y], dtype=torch.float32),
-                fingerprint=torch.tensor(fp, dtype=torch.float32),
+                fingerprint=torch.tensor(fp, dtype=torch.float32).unsqueeze(0),
             )
             data_list.append(data)
         except Exception:
             pass
-    return DataLoader(data_list, batch_size=batch_size, shuffle=shuffle)
+
+    def collate_fn(batch):
+        from torch_geometric.data import Batch
+        batch_obj = Batch.from_data_list(batch)
+        # fingerprint is graph-level [B, fp_dim], already stacked correctly
+        return batch_obj
+
+    return DataLoader(data_list, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_fn)
 
 
 train_loader = make_fused_loader(
