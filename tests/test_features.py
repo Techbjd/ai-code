@@ -296,7 +296,7 @@ def test_mol_to_graph_with_fps_invalid_raises():
 
 
 def test_mol_to_graph_with_fps_all_atoms_same_fp():
-    """All atoms in same molecule get identical fingerprint features."""
+    """All atoms in same molecule get identical fingerprint features (molecular-level info)."""
     g = mol_to_graph_with_fps("CCO", use_morgan=True, use_maccs=True)
     # Fingerprint part starts at index ATOM_FEAT_DIM
     fp_part = g["node_feats"][:, ATOM_FEAT_DIM:]

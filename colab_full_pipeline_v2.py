@@ -184,6 +184,36 @@ def make_graph_only_loader(smiles_list, labels, batch_size=128, shuffle=False):
     return DataLoader(data_list, batch_size=batch_size, shuffle=shuffle)
 
 
+def make_graph_morgan_loader(smiles_list, labels, batch_size=128, shuffle=False):
+    """Create DataLoader with graph + Morgan only (32 + 2048 = 2080-dim)."""
+    data_list = []
+    for s, y in zip(smiles_list, labels):
+        g = mol_to_graph_with_fps(s, use_morgan=True, use_maccs=False)
+        data = Data(
+            x=g["node_feats"],
+            edge_index=g["edge_index"],
+            edge_attr=g["edge_feats"],
+            y=torch.tensor([y], dtype=torch.float32),
+        )
+        data_list.append(data)
+    return DataLoader(data_list, batch_size=batch_size, shuffle=shuffle)
+
+
+def make_graph_maccs_loader(smiles_list, labels, batch_size=128, shuffle=False):
+    """Create DataLoader with graph + MACCS only (32 + 166 = 198-dim)."""
+    data_list = []
+    for s, y in zip(smiles_list, labels):
+        g = mol_to_graph_with_fps(s, use_morgan=False, use_maccs=True)
+        data = Data(
+            x=g["node_feats"],
+            edge_index=g["edge_index"],
+            edge_attr=g["edge_feats"],
+            y=torch.tensor([y], dtype=torch.float32),
+        )
+        data_list.append(data)
+    return DataLoader(data_list, batch_size=batch_size, shuffle=shuffle)
+
+
 def make_enriched_loader(smiles_list, labels, batch_size=128, shuffle=False):
     """Create DataLoader with enriched graphs (32 + 2048 + 166 = 2246-dim)."""
     data_list = []
@@ -222,6 +252,30 @@ def train_gnn(model_name, train_df, val_df, test_df, device, in_dim, feature_typ
             val_df["smiles"].tolist(), val_df["active"].astype(int).tolist()
         )
         test_loader = make_graph_only_loader(
+            test_df["smiles"].tolist(), test_df["active"].astype(int).tolist()
+        )
+    elif feature_type == "graph_morgan":
+        train_loader = make_graph_morgan_loader(
+            train_df["smiles"].tolist(),
+            train_df["active"].astype(int).tolist(),
+            shuffle=True,
+        )
+        val_loader = make_graph_morgan_loader(
+            val_df["smiles"].tolist(), val_df["active"].astype(int).tolist()
+        )
+        test_loader = make_graph_morgan_loader(
+            test_df["smiles"].tolist(), test_df["active"].astype(int).tolist()
+        )
+    elif feature_type == "graph_maccs":
+        train_loader = make_graph_maccs_loader(
+            train_df["smiles"].tolist(),
+            train_df["active"].astype(int).tolist(),
+            shuffle=True,
+        )
+        val_loader = make_graph_maccs_loader(
+            val_df["smiles"].tolist(), val_df["active"].astype(int).tolist()
+        )
+        test_loader = make_graph_maccs_loader(
             test_df["smiles"].tolist(), test_df["active"].astype(int).tolist()
         )
     else:  # enriched
@@ -316,6 +370,36 @@ for name in gnn_names:
         print(f"  ERROR: {e}")
 
 # %%
+# @title 9b. Train GNN Models - Graph + Morgan (2080-dim)
+print("\n" + "=" * 70)
+print("PART D2: GNN MODELS - GRAPH + MORGAN (32 + 2048 = 2080-dim)")
+print("=" * 70)
+
+for name in gnn_names:
+    print(f"\n--- Training {name.upper()} (graph + morgan) ---")
+    try:
+        metrics = train_gnn(name, train_df, val_df, test_df, DEVICE, in_dim=2080, feature_type="graph_morgan", epochs=100, patience=15)
+        results[f"gnn_{name}_graph_morgan"] = metrics
+        print(f"  AUC={metrics.get('auc', 0):.4f} ACC={metrics['acc']:.4f} MCC={metrics['mcc']:.4f}")
+    except Exception as e:
+        print(f"  ERROR: {e}")
+
+# %%
+# @title 9c. Train GNN Models - Graph + MACCS (198-dim)
+print("\n" + "=" * 70)
+print("PART D3: GNN MODELS - GRAPH + MACCS (32 + 166 = 198-dim)")
+print("=" * 70)
+
+for name in gnn_names:
+    print(f"\n--- Training {name.upper()} (graph + maccs) ---")
+    try:
+        metrics = train_gnn(name, train_df, val_df, test_df, DEVICE, in_dim=198, feature_type="graph_maccs", epochs=100, patience=15)
+        results[f"gnn_{name}_graph_maccs"] = metrics
+        print(f"  AUC={metrics.get('auc', 0):.4f} ACC={metrics['acc']:.4f} MCC={metrics['mcc']:.4f}")
+    except Exception as e:
+        print(f"  ERROR: {e}")
+
+# %%
 # @title 10. Train GNN Models - Enriched Graphs (2246-dim)
 print("\n" + "=" * 70)
 print("PART E: GNN MODELS - ENRICHED GRAPHS (2246-dim = atom + Morgan + MACCS)")
@@ -384,6 +468,8 @@ ml_maccs = {k: v for k, v in results.items() if k.startswith("ml_") and "maccs" 
 ml_morgan = {k: v for k, v in results.items() if k.startswith("ml_") and "morgan" in k and "both" not in k}
 ml_both = {k: v for k, v in results.items() if k.startswith("ml_") and "both" in k}
 gnn_graph = {k: v for k, v in results.items() if k.startswith("gnn_") and "graph_only" in k}
+gnn_graph_morgan = {k: v for k, v in results.items() if k.startswith("gnn_") and "graph_morgan" in k}
+gnn_graph_maccs = {k: v for k, v in results.items() if k.startswith("gnn_") and "graph_maccs" in k}
 gnn_enriched = {k: v for k, v in results.items() if k.startswith("gnn_") and "enriched" in k}
 ensemble = {k: v for k, v in results.items() if k.startswith("ensemble_")}
 
@@ -416,6 +502,26 @@ print("\n--- GNN MODELS - GRAPH ONLY (32-dim, NO fingerprints) ---")
 print(f"{'Model':<18} {'AUC':>6} {'ACC':>6} {'SEN':>6} {'SPE':>6} {'MCC':>6}")
 print("-" * 60)
 for name, m in sorted(gnn_graph.items(), key=lambda x: x[1].get("auc") or 0, reverse=True):
+    parts = name.split("_")
+    model_type = parts[1].upper()
+    auc_str = f"{m['auc']:.4f}" if m.get("auc") is not None else "N/A"
+    print(f"{model_type:<18} {auc_str:>6} {m['acc']:.4f} {m['sen']:.4f} {m['spe']:.4f} {m['mcc']:.4f}")
+
+# Print GNN Graph + Morgan
+print("\n--- GNN MODELS - GRAPH + MORGAN (32 + 2048 = 2080-dim) ---")
+print(f"{'Model':<18} {'AUC':>6} {'ACC':>6} {'SEN':>6} {'SPE':>6} {'MCC':>6}")
+print("-" * 60)
+for name, m in sorted(gnn_graph_morgan.items(), key=lambda x: x[1].get("auc") or 0, reverse=True):
+    parts = name.split("_")
+    model_type = parts[1].upper()
+    auc_str = f"{m['auc']:.4f}" if m.get("auc") is not None else "N/A"
+    print(f"{model_type:<18} {auc_str:>6} {m['acc']:.4f} {m['sen']:.4f} {m['spe']:.4f} {m['mcc']:.4f}")
+
+# Print GNN Graph + MACCS
+print("\n--- GNN MODELS - GRAPH + MACCS (32 + 166 = 198-dim) ---")
+print(f"{'Model':<18} {'AUC':>6} {'ACC':>6} {'SEN':>6} {'SPE':>6} {'MCC':>6}")
+print("-" * 60)
+for name, m in sorted(gnn_graph_maccs.items(), key=lambda x: x[1].get("auc") or 0, reverse=True):
     parts = name.split("_")
     model_type = parts[1].upper()
     auc_str = f"{m['auc']:.4f}" if m.get("auc") is not None else "N/A"
@@ -459,6 +565,8 @@ maccs_aucs = [v.get("auc", 0) for v in ml_maccs.values() if v.get("auc")]
 morgan_aucs = [v.get("auc", 0) for v in ml_morgan.values() if v.get("auc")]
 both_aucs = [v.get("auc", 0) for v in ml_both.values() if v.get("auc")]
 graph_aucs = [v.get("auc", 0) for v in gnn_graph.values() if v.get("auc")]
+graph_morgan_aucs = [v.get("auc", 0) for v in gnn_graph_morgan.values() if v.get("auc")]
+graph_maccs_aucs = [v.get("auc", 0) for v in gnn_graph_maccs.values() if v.get("auc")]
 enriched_aucs = [v.get("auc", 0) for v in gnn_enriched.values() if v.get("auc")]
 
 if maccs_aucs:
@@ -469,6 +577,10 @@ if both_aucs:
     print(f"  ML (Morgan+MACCS) avg AUC:    {np.mean(both_aucs):.4f}")
 if graph_aucs:
     print(f"  GNN (graph only) avg AUC:     {np.mean(graph_aucs):.4f}")
+if graph_morgan_aucs:
+    print(f"  GNN (graph+Morgan) avg AUC:   {np.mean(graph_morgan_aucs):.4f}")
+if graph_maccs_aucs:
+    print(f"  GNN (graph+MACCS) avg AUC:    {np.mean(graph_maccs_aucs):.4f}")
 if enriched_aucs:
     print(f"  GNN (enriched) avg AUC:       {np.mean(enriched_aucs):.4f}")
 

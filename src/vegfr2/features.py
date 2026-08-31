@@ -193,8 +193,9 @@ def mol_to_graph_with_fps(
     
     n_atoms = mol.GetNumAtoms()
     
-    # Append fingerprint to EACH atom node
-    # All atoms in same molecule get same fingerprint (molecular-level info)
+    # Each atom gets the FULL molecular fingerprint (molecular-level info)
+    # This works because GNN learns to use fingerprint knowledge during message passing
+    # All atoms in same molecule get same fingerprint = each atom "knows" the molecule
     enriched_rows = []
     for row in rows:
         enriched_row = row + mol_fp.tolist()  # 32 + 2048 + 166 = 2246

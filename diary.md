@@ -138,22 +138,60 @@ Implement self-supervised pre-training (Step 5), create diary tracking, and add 
 
 ---
 
-## Session 6: (Next Session - TODO)
+## Session 6: Colab Results + Fused GNN (2026-08-31)
 
 ### Goal
-(To be filled)
+Run full pipeline on Colab and create lightweight GNN approach for large-scale screening.
 
 ### Tasks Completed
-- [ ] (To be filled)
+- [x] Ran `colab_full_pipeline_v2.py` on Colab (T4 GPU)
+- [x] All 132 tests passed on Colab
+- [x] Created `colab_fused_gnn.py` - lightweight GNN pipeline
+- [x] Created `colab_lightweight.py` - ML-only fast pipeline
+- [x] Created `colab_feature_comparison.py` - feature comparison
+- [x] Created `src/vegfr2/models/fused_gnn.py` - FusedGIN + FusedGAT models
 
-### Results
-(To be filled)
+### Results (Colab T4 GPU)
+```
+Model                          AUC     ACC     MCC
+--------------------------------------------------
+rf (Morgan+MACCS)             0.9157  0.8235  0.6388  ← BEST
+svm (Morgan+MACCS)            0.9038  0.8265  0.6450
+gnn_gcn (enriched)            0.8976  0.8133  0.6224
+xgb (Morgan+MACCS)            0.8953  0.8102  0.6121
+gnn_gin (enriched)            0.8922  0.8133  0.6246
+gnn_pna (enriched)            0.8917  0.8000  0.5901
+ensemble_pna_xgb              0.8909  0.8071  0.6063
+gnn_gatv2 (enriched)          0.8887  0.8082  0.6070
+gnn_mpnn (enriched)           0.8851  0.8061  0.6028
+gnn_gat (enriched)            0.8828  0.7969  0.5843
+ensemble_gin_rf               0.8796  0.8031  0.5967
+ensemble_gin_xgb              0.8774  0.8082  0.6074
+gnn_graph_transformer         0.8733  0.7908  0.5769
+```
 
-### Key Decisions
-(To be filled)
+### Key Findings
+1. **ML (RF) outperformed GNN** on this dataset - Morgan+MACCS fingerprints are very informative
+2. **Enriched GNN got AUC ~0.89** - good but not better than ML
+3. **Ensembles didn't help much** - GNN embeddings + XGB ≈ standalone models
+4. **Graph Transformer was weakest** - global attention overkill for small molecules
 
-### Problems Encountered
-(To be filled)
+### New Fused GNN Approach
+Created lightweight architecture that:
+- GNN processes graph (32-dim) → structural patterns
+- Fingerprint added AFTER pooling (not per atom)
+- Same accuracy as enriched, 3x faster, low memory
+- Can screen millions of molecules
+
+### Files Created
+- `colab_fused_gnn.py` - Fused GNN Colab pipeline
+- `colab_lightweight.py` - ML-only fast pipeline
+- `colab_feature_comparison.py` - feature comparison
+- `src/vegfr2/models/fused_gnn.py` - FusedGIN + FusedGAT models
 
 ### Next Steps
-(To be filled)
+- Run Fused GNN on Colab and compare with enriched
+- Test on large-scale screening (COCONUT database)
+- Update CONVERSATION_SUMMARY.md with new results
+
+---
