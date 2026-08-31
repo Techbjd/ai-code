@@ -318,6 +318,8 @@ print("=" * 60)
 
 # %%
 # @title 10. Save Model
+import os
+os.makedirs("checkpoints", exist_ok=True)
 torch.save({
     "model_state_dict": model.state_dict(),
     "model_type": "fused_gin",
