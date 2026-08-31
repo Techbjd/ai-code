@@ -12,6 +12,7 @@ from vegfr2.models.gin import GIN_PyG
 from vegfr2.models.pna import PNA_PyG
 from vegfr2.models.graph_transformer import GraphTransformer_PyG
 from vegfr2.models.ensemble import GNNEnsembleClassifier
+from vegfr2.models.fused_gnn import FusedGIN, FusedGAT
 
 __all__ = [
     "GCN_PyG",
@@ -22,6 +23,8 @@ __all__ = [
     "PNA_PyG",
     "GraphTransformer_PyG",
     "GNNEnsembleClassifier",
+    "FusedGIN",
+    "FusedGAT",
 ]
 
 MODEL_REGISTRY: dict[str, type] = {
