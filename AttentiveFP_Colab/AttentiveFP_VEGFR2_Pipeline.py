@@ -46,12 +46,12 @@ Reference:
 # @title 1. Install Dependencies (Colab-optimized)
 import subprocess, sys
 
-# Colab already has: torch, rdkit, numpy, pandas, matplotlib, scikit-learn
+# Colab already has: torch, numpy, pandas, matplotlib, scikit-learn
 # Only install what's missing
 print("Checking packages...")
 
 pkgs_to_install = []
-for name in ["torch_geometric", "xgboost", "optuna"]:
+for name in ["rdkit", "torch_geometric", "xgboost", "optuna"]:
     try:
         __import__(name)
         print(f"  {name}: OK")
@@ -122,21 +122,30 @@ BASE_URL = "https://www.ebi.ac.uk/chembl/api/data"
 TARGET_ID = "CHEMBL279"
 
 def download_chembl(target_id, output_path):
-    """Download IC50 data for VEGFR2 from ChEMBL."""
+    """Download IC50 data for VEGFR2 from ChEMBL with retry logic."""
+    import time
     rows = []
     offset = 0
     page_size = 1000
+    max_retries = 3
 
     print(f"Downloading VEGFR2 ({target_id}) IC50 data...")
 
     while True:
         url = f"{BASE_URL}/activity.json?target_chembl_id={target_id}&standard_type=IC50&limit={page_size}&offset={offset}"
-        try:
-            with urllib.request.urlopen(url) as resp:
-                data = json.load(resp)
-        except Exception as e:
-            print(f"  Error at offset {offset}: {e}")
-            break
+        for attempt in range(max_retries):
+            try:
+                with urllib.request.urlopen(url, timeout=30) as resp:
+                    data = json.load(resp)
+                break
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait = 2 ** (attempt + 1)
+                    print(f"  Error at offset {offset} (attempt {attempt+1}/{max_retries}): {e}. Retrying in {wait}s...")
+                    time.sleep(wait)
+                else:
+                    print(f"  Error at offset {offset}: {e} (giving up after {max_retries} attempts)")
+                    data = {"activities": []}
 
         activities = data.get("activities", [])
         if not activities:
