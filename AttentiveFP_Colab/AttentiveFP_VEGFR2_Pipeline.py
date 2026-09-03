@@ -76,14 +76,15 @@ print("All packages ready!")
 import os
 
 REPO_URL = "https://github.com/Techbjd/ai-code.git"
+REPO_BRANCH = "restructured-pipeline"
 REPO_DIR = "/content/ai-code"
 
 if not os.path.exists(REPO_DIR):
-    os.system(f"git clone {REPO_URL} {REPO_DIR}")
-    print("Repository cloned!")
+    os.system(f"git clone -b {REPO_BRANCH} {REPO_URL} {REPO_DIR}")
+    print(f"Repository cloned (branch: {REPO_BRANCH})!")
 else:
-    os.system(f"cd {REPO_DIR} && git pull")
-    print("Repository updated!")
+    os.system(f"cd {REPO_DIR} && git checkout {REPO_BRANCH} && git pull")
+    print(f"Repository updated (branch: {REPO_BRANCH})!")
 
 sys.path.insert(0, os.path.join(REPO_DIR, "src"))
 os.chdir(REPO_DIR)
