@@ -154,18 +154,18 @@ class AttentiveFP(nn.Module):
 
             # Softmax per destination node (scatter_softmax)
             align_score = align_score.squeeze(-1)  # [E]
-            scores_max = torch.zeros(num_nodes, device=x.device).scatter_reduce_(
+            scores_max = align_score.new_zeros(num_nodes).scatter_reduce_(
                 0, dst, align_score, reduce="amax"
             )
             align_score = align_score - scores_max[dst]
             exp_scores = align_score.exp()
-            scores_sum = torch.zeros(num_nodes, device=x.device).scatter_add_(0, dst, exp_scores)
+            scores_sum = exp_scores.new_zeros(num_nodes).scatter_add_(0, dst, exp_scores)
             attention_weight = exp_scores / (scores_sum[dst] + 1e-8)  # [E]
 
             # Context: weighted sum of transformed neighbor features
             neighbor_transformed = self.attend[d](self.dropout(neighbor_feature))  # [E, hidden]
             context = neighbor_transformed * attention_weight.unsqueeze(-1)  # [E, hidden]
-            context = torch.zeros(num_nodes, self.hidden, device=x.device).scatter_add_(
+            context = context.new_zeros(num_nodes, self.hidden).scatter_add_(
                 0, dst.unsqueeze(1).expand_as(context), context
             )  # [N, hidden]
             context = F.elu(context)
@@ -188,12 +188,12 @@ class AttentiveFP(nn.Module):
             mol_align_score = mol_align_score.squeeze(-1)  # [N]
 
             # Softmax per molecule (scatter_softmax over batch)
-            batch_max = torch.zeros(num_nodes, device=x.device).scatter_reduce_(
+            batch_max = mol_align_score.new_zeros(num_nodes).scatter_reduce_(
                 0, batch, mol_align_score, reduce="amax"
             )
             mol_align_score = mol_align_score - batch_max[batch]
             mol_exp_scores = mol_align_score.exp()
-            mol_scores_sum = torch.zeros(num_nodes, device=x.device).scatter_add_(
+            mol_scores_sum = mol_exp_scores.new_zeros(num_nodes).scatter_add_(
                 0, batch, mol_exp_scores
             )
             mol_attention_weight = mol_exp_scores / (mol_scores_sum[batch] + 1e-8)  # [N]
@@ -236,17 +236,17 @@ class AttentiveFP(nn.Module):
             align_input = torch.cat([h_src, h_dst], dim=-1)
             align_score = F.leaky_relu(self.align[d](self.dropout(align_input)), negative_slope=0.2)
             align_score = align_score.squeeze(-1)
-            scores_max = torch.zeros(num_nodes, device=x.device).scatter_reduce_(
+            scores_max = align_score.new_zeros(num_nodes).scatter_reduce_(
                 0, dst, align_score, reduce="amax"
             )
             align_score = align_score - scores_max[dst]
             exp_scores = align_score.exp()
-            scores_sum = torch.zeros(num_nodes, device=x.device).scatter_add_(0, dst, exp_scores)
+            scores_sum = exp_scores.new_zeros(num_nodes).scatter_add_(0, dst, exp_scores)
             attention_weight = exp_scores / (scores_sum[dst] + 1e-8)
 
             neighbor_transformed = self.attend[d](self.dropout(neighbor_feature))
             context = neighbor_transformed * attention_weight.unsqueeze(-1)
-            context = torch.zeros(num_nodes, self.hidden, device=x.device).scatter_add_(
+            context = context.new_zeros(num_nodes, self.hidden).scatter_add_(
                 0, dst.unsqueeze(1).expand_as(context), context
             )
             context = F.elu(context)
@@ -260,12 +260,12 @@ class AttentiveFP(nn.Module):
             mol_align_input = torch.cat([mol_expand, activated_features], dim=-1)
             mol_align_score = F.leaky_relu(self.mol_align(self.dropout(mol_align_input)), negative_slope=0.2)
             mol_align_score = mol_align_score.squeeze(-1)
-            batch_max = torch.zeros(num_nodes, device=x.device).scatter_reduce_(
+            batch_max = mol_align_score.new_zeros(num_nodes).scatter_reduce_(
                 0, batch, mol_align_score, reduce="amax"
             )
             mol_align_score = mol_align_score - batch_max[batch]
             mol_exp_scores = mol_align_score.exp()
-            mol_scores_sum = torch.zeros(num_nodes, device=x.device).scatter_add_(
+            mol_scores_sum = mol_exp_scores.new_zeros(num_nodes).scatter_add_(
                 0, batch, mol_exp_scores
             )
             mol_attention_weight = mol_exp_scores / (mol_scores_sum[batch] + 1e-8)
