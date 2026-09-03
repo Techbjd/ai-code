@@ -296,22 +296,22 @@ print(f"  Test scaffolds:  {len(test_scaffolds)}")
 print(f"  Overlap: {len(overlap)} ({len(overlap)/max(len(test_scaffolds),1)*100:.1f}% of test)")
 
 # %%
-# @title 7. Feature Extraction (Enriched Graphs)
+# @title 7. Feature Extraction (Molecular Graphs)
 import sys
 sys.path.insert(0, os.path.join(REPO_DIR, "src"))
 
-from vegfr2.features import mol_to_graph_with_fps
+from vegfr2.features import mol_to_graph
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 from multiprocessing import Pool, cpu_count
 import time
 
-print("Building enriched graphs: [atom(32) + Morgan(2048) + MACCS(166)] = 2246-dim")
+print("Building molecular graphs: [atom(32) + bond(11)] = 32-dim node features")
 
 def _build_graph(args):
     smiles, label = args
     try:
-        g = mol_to_graph_with_fps(smiles, use_morgan=True, use_maccs=True)
+        g = mol_to_graph(smiles)
         return Data(
             x=g["node_feats"],
             edge_index=g["edge_index"],
@@ -357,7 +357,7 @@ print(f"\nLoaders ready: {len(train_loader)} train, {len(val_loader)} val, {len(
 from vegfr2.models.attentive_fp import AttentiveFP
 
 model = AttentiveFP(
-    in_dim=2246,      # Enriched: atom(32) + Morgan(2048) + MACCS(166)
+    in_dim=32,         # Molecular graph: atom features only (32-dim)
     hidden=200,        # Reference value
     layers=3,          # radius in reference
     out_dim=1,
@@ -384,8 +384,7 @@ PATIENCE = 25
 torch.manual_seed(42)
 np.random.seed(42)
 
-# torch.compile incompatible with AttentiveFP's scatter_reduce + AMP
-# Skip it - AMP alone provides sufficient speedup
+# torch.compile incompatible with AttentiveFP's scatter_reduce + AMP - skip it.
 
 opt = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=EPOCHS, eta_min=1e-6)
@@ -396,9 +395,10 @@ n_total = len(train_df)
 pos_weight = torch.tensor([(n_total - n_active) / max(n_active, 1)], device=DEVICE)
 loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
-# AMP (Automatic Mixed Precision) for 2x faster training
-scaler = torch.amp.GradScaler("cuda") if DEVICE.type == "cuda" else None
-use_amp = scaler is not None
+# AMP disabled: dataset is small (972 samples) so speedup is negligible,
+# and AttentiveFP's scatter_reduce is fragile under autocast
+scaler = None
+use_amp = False
 
 print(f"Training for {EPOCHS} epochs (patience={PATIENCE})...")
 print(f"  LR={LEARNING_RATE}, Weight Decay={WEIGHT_DECAY}")
@@ -607,7 +607,7 @@ results = {"AttentiveFP (scaffold)": {
 
 # --- GCN baseline ---
 print("Training GCN baseline...")
-gcn_model = build_pyg_model("gcn", in_dim=2246, hidden=128, layers=3, dropout=0.3).to(DEVICE)
+gcn_model = build_pyg_model("gcn", in_dim=32, hidden=128, layers=3, dropout=0.3).to(DEVICE)
 opt_gcn = torch.optim.AdamW(gcn_model.parameters(), lr=0.001, weight_decay=1e-4)
 loss_fn_gcn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
@@ -698,7 +698,7 @@ save_dir.mkdir(exist_ok=True)
 torch.save({
     "model_state_dict": model.state_dict(),
     "model_type": "attentive_fp",
-    "in_dim": 2246,
+    "in_dim": 32,
     "hidden": 200,
     "layers": 3,
     "num_timesteps": 2,
@@ -818,7 +818,7 @@ else:
         valid_smiles = []
         for s in smiles_list:
             try:
-                g = mol_to_graph_with_fps(s, use_morgan=True, use_maccs=True)
+                g = mol_to_graph(s)
                 data = Data(
                     x=g["node_feats"],
                     edge_index=g["edge_index"],
