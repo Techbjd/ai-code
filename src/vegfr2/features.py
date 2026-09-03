@@ -32,6 +32,11 @@ BOND_STEREO: list[str] = [
 ATOM_FEAT_DIM: int = 32
 BOND_FEAT_DIM: int = 11
 
+# ---------------------------------------------------------------------------
+# Fingerprint cache: compute once per SMILES, reuse across all calls
+# ---------------------------------------------------------------------------
+_FP_CACHE: dict[str, dict[str, np.ndarray]] = {}
+
 
 def _one_hot(value: object, choices: Sequence[object]) -> list[int]:
     """Return a 0/1 indicator list for value within choices."""
@@ -39,33 +44,48 @@ def _one_hot(value: object, choices: Sequence[object]) -> list[int]:
 
 
 def smiles_to_morgan(smiles: str, radius: int = 2, n_bits: int = 2048) -> np.ndarray:
-    """Compute a Morgan fingerprint as a uint8 bit array."""
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        raise ValueError(f'Invalid SMILES: {smiles}')
-    generator = rdFingerprintGenerator.GetMorganGenerator(radius=radius, fpSize=n_bits)
-    fp = generator.GetFingerprint(mol)
-    return np.fromiter((fp[i] for i in range(n_bits)), dtype=np.uint8)
+    """Compute a Morgan fingerprint as a uint8 bit array (cached)."""
+    cache_key = f"morgan_{radius}_{n_bits}"
+    if smiles not in _FP_CACHE:
+        _FP_CACHE[smiles] = {}
+    if cache_key not in _FP_CACHE[smiles]:
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            raise ValueError(f'Invalid SMILES: {smiles}')
+        generator = rdFingerprintGenerator.GetMorganGenerator(radius=radius, fpSize=n_bits)
+        fp = generator.GetFingerprint(mol)
+        _FP_CACHE[smiles][cache_key] = np.fromiter((fp[i] for i in range(n_bits)), dtype=np.uint8)
+    return _FP_CACHE[smiles][cache_key]
 
 
 def smiles_to_maccs(smiles: str, n_bits: int = 166) -> np.ndarray:
-    """Compute MACCS structural keys as a uint8 bit array.
-    
+    """Compute MACCS structural keys as a uint8 bit array (cached).
+
     MACCS keys are 166 predefined structural patterns commonly used in
     cheminformatics for similarity searching and virtual screening.
-    
+
     Args:
         smiles: SMILES string representation of a molecule
         n_bits: Number of MACCS keys (default: 166, standard MACCS length)
-    
+
     Returns:
         numpy array of shape (n_bits,) with dtype uint8
     """
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        raise ValueError(f'Invalid SMILES: {smiles}')
-    fp = MACCSkeys.GenMACCSKeys(mol)
-    return np.fromiter((fp[i] for i in range(n_bits)), dtype=np.uint8)
+    cache_key = f"maccs_{n_bits}"
+    if smiles not in _FP_CACHE:
+        _FP_CACHE[smiles] = {}
+    if cache_key not in _FP_CACHE[smiles]:
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            raise ValueError(f'Invalid SMILES: {smiles}')
+        fp = MACCSkeys.GenMACCSKeys(mol)
+        _FP_CACHE[smiles][cache_key] = np.fromiter((fp[i] for i in range(n_bits)), dtype=np.uint8)
+    return _FP_CACHE[smiles][cache_key]
+
+
+def clear_fp_cache() -> None:
+    """Free in-memory fingerprint cache after batch processing."""
+    _FP_CACHE.clear()
 
 
 def _atom_features(atom: Chem.Atom) -> list[float]:

@@ -61,7 +61,12 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
 def split(
     df: pd.DataFrame, seed: int = 42
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Stratified 8:1:1 split into (train, val, test)."""
+    """Stratified 8:1:1 split into (train, val, test).
+
+    This is the default random stratified split.
+    For scaffold-based splitting (recommended for generalization testing),
+    use ``scaffold_split`` instead.
+    """
     remainder, test_df = train_test_split(
         df, test_size=0.1, stratify=df['active'], random_state=seed
     )
@@ -69,3 +74,89 @@ def split(
         remainder, test_size=1 / 9, stratify=remainder['active'], random_state=seed
     )
     return train_df, val_df, test_df
+
+
+def _murcko_scaffold(smiles: str) -> str:
+    """Extract Murcko scaffold from a SMILES string.
+
+    The scaffold is the longest linear chain of atoms that forms the
+    backbone of the molecule. Molecules with the same scaffold share
+    the same core structure.
+
+    Falls back to the canonical SMILES if scaffold extraction fails.
+    """
+    try:
+        from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
+        return MurckoScaffoldSmiles(smiles=smiles, includeChirality=False)
+    except Exception:
+        return smiles
+
+
+def scaffold_split(
+    df: pd.DataFrame,
+    test_size: float = 0.1,
+    val_size: float = 0.1,
+    seed: int = 42,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Split data by Murcko scaffolds (80/10/10).
+
+    This ensures the test set contains structurally different molecules
+    from the training set, providing a more rigorous evaluation of
+    model generalization ability.
+
+    Reference: AttentiveFP (OpenDrugAI) uses this for MoleculeNet tasks.
+
+    Args:
+        df: DataFrame with 'smiles' and 'active' columns
+        test_size: Fraction for test set (default 0.1)
+        val_size: Fraction for validation set (default 0.1)
+        seed: Random seed for shuffling within scaffold groups
+
+    Returns:
+        (train_df, val_df, test_df) tuple
+    """
+    import numpy as np
+
+    # Compute scaffolds
+    scaffolds = df['smiles'].map(_murcko_scaffold)
+
+    # Group indices by scaffold
+    scaffold_groups: dict[str, list[int]] = {}
+    for idx, scaffold in zip(df.index, scaffolds):
+        scaffold_groups.setdefault(scaffold, []).append(idx)
+
+    # Sort scaffolds by size (largest first) for balanced splitting
+    np.random.seed(seed)
+    sorted_scaffolds = sorted(scaffold_groups.keys(), key=lambda s: len(scaffold_groups[s]), reverse=True)
+
+    # Assign scaffolds to train/val/test
+    n_total = len(df)
+    n_test = int(n_total * test_size)
+    n_val = int(n_total * val_size)
+
+    test_indices: list[int] = []
+    val_indices: list[int] = []
+    train_indices: list[int] = []
+
+    for scaffold in sorted_scaffolds:
+        indices = scaffold_groups[scaffold]
+        # Shuffle within scaffold group
+        np.random.shuffle(indices)
+
+        if len(test_indices) < n_test:
+            test_indices.extend(indices)
+        elif len(val_indices) < n_val:
+            val_indices.extend(indices)
+        else:
+            train_indices.extend(indices)
+
+    # Trim to exact sizes if needed
+    test_indices = test_indices[:n_test]
+    val_indices = val_indices[:n_val]
+
+    # Ensure no overlap
+    train_indices = [i for i in train_indices if i not in set(test_indices) and i not in set(val_indices)]
+
+    return df.loc[train_indices].reset_index(drop=True), \
+           df.loc[val_indices].reset_index(drop=True), \
+           df.loc[test_indices].reset_index(drop=True)
