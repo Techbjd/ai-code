@@ -342,7 +342,8 @@ model = AttentiveFP(
 
 n_params = sum(p.numel() for p in model.parameters())
 print(f"AttentiveFP: {n_params:,} params")
-print(f"  Architecture: atom_fc + neighbor_fc + {layers} attention layers + {2}-step GRU readout")
+LAYERS = 3
+print(f"  Architecture: atom_fc + neighbor_fc + {LAYERS} attention layers + {2}-step GRU readout")
 
 # %%
 # @title 9. Training Loop (AMP + Optimized)
