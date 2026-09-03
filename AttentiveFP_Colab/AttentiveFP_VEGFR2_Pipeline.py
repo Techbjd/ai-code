@@ -6,7 +6,7 @@ Complete pipeline following Hou et al. (2025) methodology:
 
   1. Download VEGFR2 IC50 data from ChEMBL279
   2. Data standardization, deduplication, active/inactive labeling
-  3. Scaffold split (train/val/test)
+  3. Random split (8:1:1, matching paper methodology)
   4. Train AttentiveFP (OpenDrugAI reference architecture)
   5. Validate: ROC-AUC + PR-AUC + MCC + F1 + Sensitivity + Specificity
   6. Screen Chinese medicine compounds (TCMSP)
@@ -31,15 +31,15 @@ Reference:
 # This notebook implements the full pipeline from Hou et al. (2025):
 # - **Data**: ChEMBL279 VEGFR2 IC50 data
 # - **Model**: AttentiveFP (Graph Attention + GRU + Attentive Readout)
-# - **Split**: Scaffold-based (generalization test)
+# - **Split**: Random 8:1:1 (matching paper methodology)
 # - **Screen**: Chinese medicine compounds from TCMSP
 #
 # Pipeline flow:
 # ```
 # XO DATASET → Data standardization → Deduplication → Active/inactive labels
-# → DATA SPLIT (scaffold) → TRAIN/TEST → AttentiveFP training
+# → DATA SPLIT (random 8:1:1) → TRAIN/TEST → AttentiveFP training
 # → Final independent test → ROC-AUC + PR-AUC + MCC + F1 + Sens + Spec
-# → Scaffold/generalization test → Chinese medicine screening
+# → Chinese medicine screening → top-ranked candidates
 # ```
 
 # %%
@@ -138,33 +138,43 @@ BASE_URL = "https://www.ebi.ac.uk/chembl/api/data"
 TARGET_ID = "CHEMBL279"
 
 def download_chembl(target_id, output_path):
-    """Download IC50 data for VEGFR2 from ChEMBL with retry logic."""
+    """Download ALL IC50 data for VEGFR2 from ChEMBL with robust retry.
+
+    The paper (Hou et al. 2025) used 5,564 unique compounds from CHEMBL279.
+    ChEMBL has ~17,000 IC50 activities; transient HTTP 500 errors are common,
+    so we retry each page aggressively and resume across pages to get the full set.
+    """
     import time
     rows = []
     offset = 0
     page_size = 1000
-    max_retries = 3
+    max_retries = 8
+    consecutive_empty = 0
 
     print(f"Downloading VEGFR2 ({target_id}) IC50 data...")
 
     while True:
         url = f"{BASE_URL}/activity.json?target_chembl_id={target_id}&standard_type=IC50&limit={page_size}&offset={offset}"
+        data = None
         for attempt in range(max_retries):
             try:
-                with urllib.request.urlopen(url, timeout=30) as resp:
+                with urllib.request.urlopen(url, timeout=60) as resp:
                     data = json.load(resp)
                 break
             except Exception as e:
-                if attempt < max_retries - 1:
-                    wait = 2 ** (attempt + 1)
-                    print(f"  Error at offset {offset} (attempt {attempt+1}/{max_retries}): {e}. Retrying in {wait}s...")
-                    time.sleep(wait)
-                else:
-                    print(f"  Error at offset {offset}: {e} (giving up after {max_retries} attempts)")
-                    data = {"activities": []}
+                wait = 3 ** (attempt + 1)
+                print(f"  Error at offset {offset} (attempt {attempt+1}/{max_retries}): {e}. Retrying in {wait}s...")
+                time.sleep(wait)
+
+        if data is None:
+            print(f"  Giving up at offset {offset} after {max_retries} attempts.")
+            break
 
         activities = data.get("activities", [])
         if not activities:
+            # Reached end of data
+            if offset > 0:
+                print(f"  End of data at offset {offset}.")
             break
 
         for act in activities:
@@ -185,17 +195,20 @@ def download_chembl(target_id, output_path):
         print(f"  Offset {offset}: {len(rows)} compounds so far")
 
         if len(activities) < page_size:
+            print(f"  End of data at offset {offset} (< page size).")
             break
         offset += page_size
+        time.sleep(0.3)
 
     df = pd.DataFrame(rows)
     df.to_csv(output_path, index=False)
     print(f"\nSaved {len(df)} compounds to {output_path}")
     return df
 
-# Download
+# Download - always redownload unless we already have the full dataset
 raw_csv = "data/chembl_vegfr2.csv"
-if not os.path.exists(raw_csv):
+FULL_DATASET_MIN = 8000  # paper used 5,564 unique from ~14,000 raw; require ample raw rows
+if not os.path.exists(raw_csv) or len(pd.read_csv(raw_csv)) < FULL_DATASET_MIN:
     df = download_chembl(TARGET_ID, raw_csv)
 else:
     df = pd.read_csv(raw_csv)
@@ -235,65 +248,24 @@ print(f"  Inactive: {(1-df['active']).sum()} ({1-df['active'].mean():.1%})")
 df.head(10)
 
 # %%
-# @title 6. Scaffold Split
-from rdkit.Chem.Scaffolds.MurckoScaffold import MurckoScaffoldSmiles
+# @title 6. Data Split (random 8:1:1, matching paper)
+from sklearn.model_selection import train_test_split
 
-def scaffold_split(df, test_size=0.1, val_size=0.1, seed=42):
-    """Split by Murcko scaffolds for generalization testing."""
-    np.random.seed(seed)
+# Paper (Hou et al. 2025) uses RANDOM 8:1:1 split:
+#   90% train+val, 10% test; train+val further split 88.8% / 11.2% (≈8:1:1 overall)
+SEED = 42
 
-    scaffolds = df["canonical_smiles"].map(
-        lambda s: MurckoScaffoldSmiles(smiles=s, includeChirality=False)
-    )
+train_val, test_df = train_test_split(
+    df, test_size=0.1, random_state=SEED, stratify=df["active"]
+)
+train_df, val_df = train_test_split(
+    train_val, test_size=1/9, random_state=SEED, stratify=train_val["active"]
+)
 
-    scaffold_groups = {}
-    for idx, scaffold in zip(df.index, scaffolds):
-        scaffold_groups.setdefault(scaffold, []).append(idx)
-
-    sorted_scaffolds = sorted(scaffold_groups.keys(),
-                              key=lambda s: len(scaffold_groups[s]), reverse=True)
-
-    n_total = len(df)
-    n_test = int(n_total * test_size)
-    n_val = int(n_total * val_size)
-
-    test_idx, val_idx, train_idx = [], [], []
-
-    for scaffold in sorted_scaffolds:
-        indices = scaffold_groups[scaffold]
-        np.random.shuffle(indices)
-        if len(test_idx) < n_test:
-            test_idx.extend(indices)
-        elif len(val_idx) < n_val:
-            val_idx.extend(indices)
-        else:
-            train_idx.extend(indices)
-
-    test_idx = test_idx[:n_test]
-    val_idx = val_idx[:n_val]
-    train_idx = [i for i in train_idx if i not in set(test_idx) and i not in set(val_idx)]
-
-    return df.loc[train_idx].reset_index(drop=True), \
-           df.loc[val_idx].reset_index(drop=True), \
-           df.loc[test_idx].reset_index(drop=True)
-
-train_df, val_df, test_df = scaffold_split(df, seed=42)
-
-print(f"Scaffold Split:")
+print(f"Data Split (random 8:1:1, matching paper):")
 print(f"  Train: {len(train_df)} ({train_df['active'].mean():.1%} active)")
 print(f"  Val:   {len(val_df)} ({val_df['active'].mean():.1%} active)")
 print(f"  Test:  {len(test_df)} ({test_df['active'].mean():.1%} active)")
-
-# Check scaffold overlap
-train_scaffolds = set(train_df["canonical_smiles"].map(
-    lambda s: MurckoScaffoldSmiles(smiles=s, includeChirality=False)))
-test_scaffolds = set(test_df["canonical_smiles"].map(
-    lambda s: MurckoScaffoldSmiles(smiles=s, includeChirality=False)))
-overlap = train_scaffolds & test_scaffolds
-print(f"\n  Scaffold generalization check:")
-print(f"  Train scaffolds: {len(train_scaffolds)}")
-print(f"  Test scaffolds:  {len(test_scaffolds)}")
-print(f"  Overlap: {len(overlap)} ({len(overlap)/max(len(test_scaffolds),1)*100:.1f}% of test)")
 
 # %%
 # @title 7. Feature Extraction (Molecular Graphs)
@@ -515,7 +487,7 @@ pr_auc = sk_auc(recall_curve, precision_curve)
 mcc = classification_metrics(test_true, test_probs)["mcc"]
 
 print("=" * 60)
-print("AttentiveFP TEST RESULTS (Scaffold Split)")
+print("AttentiveFP TEST RESULTS (Data Split)")
 print("=" * 60)
 print(f"  ROC-AUC:       {roc_auc_score(y_true, y_prob):.4f}")
 print(f"  PR-AUC:        {pr_auc:.4f}")
@@ -681,7 +653,7 @@ results["Morgan+XGBoost"] = {
 
 # Print comparison
 print("\n" + "=" * 80)
-print("MODEL COMPARISON (Scaffold Split)")
+print("MODEL COMPARISON (Data Split)")
 print("=" * 80)
 header = f"{'Model':<25} {'ROC-AUC':>8} {'PR-AUC':>8} {'MCC':>8} {'F1':>8} {'Sens':>8} {'Spec':>8}"
 print(header)
@@ -859,20 +831,25 @@ else:
         left_on="smiles", right_on=smiles_col, how="left"
     )
 
-    # Add predictions
+    # Add predictions (paper screens a large library then selects a small
+    # high-confidence subset; rank by probability, don't threshold at 0.5)
     tcm_results["predicted_active"] = (tcm_results["probability"] >= 0.5).astype(int)
+    SCREEN_TOP_N = 20  # select this many top-ranked candidates
+    tcm_results["selected"] = 0
+    tcm_results.loc[tcm_results.index[:SCREEN_TOP_N], "selected"] = 1
 
     # Display results
     print(f"\n{'='*70}")
     print(f"TCM SCREENING RESULTS")
     print(f"{'='*70}")
     print(f"  Total screened: {len(tcm_results)}")
-    print(f"  Predicted active: {tcm_results['predicted_active'].sum()} "
+    print(f"  Predicted active (p>=0.5): {tcm_results['predicted_active'].sum()} "
           f"({tcm_results['predicted_active'].mean():.1%})")
-    print(f"\nTop 20 predictions:")
-    top_cols = [c for c in ["molecule_name", "herb_name", "smiles", "probability", "predicted_active"]
+    print(f"  Selected top-{SCREEN_TOP_N} candidates for follow-up")
+    print(f"\nTop {SCREEN_TOP_N} predictions:")
+    top_cols = [c for c in ["molecule_name", "herb_name", "smiles", "probability", "selected"]
                 if c in tcm_results.columns]
-    print(tcm_results.head(20)[top_cols].to_string(index=False))
+    print(tcm_results.head(SCREEN_TOP_N)[top_cols].to_string(index=False))
 
     # Save results
     tcm_results.to_csv("tcm_screening_results.csv", index=False)
