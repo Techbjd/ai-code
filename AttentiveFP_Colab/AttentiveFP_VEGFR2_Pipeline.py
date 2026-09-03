@@ -276,27 +276,38 @@ import sys
 sys.path.insert(0, os.path.join(REPO_DIR, "src"))
 
 from vegfr2.features import mol_to_graph_with_fps
+from torch_geometric.data import Data
+from torch_geometric.loader import DataLoader
+from multiprocessing import Pool, cpu_count
+import time
 
 print("Building enriched graphs: [atom(32) + Morgan(2048) + MACCS(166)] = 2246-dim")
 
-from torch_geometric.data import Data
-from torch_geometric.loader import DataLoader
+def _build_graph(args):
+    smiles, label = args
+    try:
+        g = mol_to_graph_with_fps(smiles, use_morgan=True, use_maccs=True)
+        return Data(
+            x=g["node_feats"],
+            edge_index=g["edge_index"],
+            edge_attr=g["edge_feats"],
+            y=torch.tensor([label], dtype=torch.float32),
+        )
+    except Exception:
+        return None
 
 def make_loader(df, batch_size=256, shuffle=False):
-    """Create DataLoader with enriched graphs and max performance settings."""
-    data_list = []
-    for s, y in zip(df["canonical_smiles"], df["active"].astype(int)):
-        try:
-            g = mol_to_graph_with_fps(s, use_morgan=True, use_maccs=True)
-            data = Data(
-                x=g["node_feats"],
-                edge_index=g["edge_index"],
-                edge_attr=g["edge_feats"],
-                y=torch.tensor([y], dtype=torch.float32),
-            )
-            data_list.append(data)
-        except Exception:
-            pass
+    """Create DataLoader with parallel graph building."""
+    t0 = time.time()
+    inputs = list(zip(df["canonical_smiles"], df["active"].astype(int).tolist()))
+
+    n_workers = min(cpu_count(), 4)
+    with Pool(n_workers) as pool:
+        results = pool.map(_build_graph, inputs)
+
+    data_list = [r for r in results if r is not None]
+    elapsed = time.time() - t0
+    print(f"  Built {len(data_list)}/{len(df)} graphs in {elapsed:.1f}s ({n_workers} workers)")
 
     return DataLoader(
         data_list,
@@ -305,15 +316,16 @@ def make_loader(df, batch_size=256, shuffle=False):
         num_workers=2,
         pin_memory=True,
         persistent_workers=True,
-        drop_last=False,
     )
 
+print(f"Building train graphs...")
 train_loader = make_loader(train_df, batch_size=256, shuffle=True)
+print(f"Building val graphs...")
 val_loader = make_loader(val_df, batch_size=256)
+print(f"Building test graphs...")
 test_loader = make_loader(test_df, batch_size=256)
 
-print(f"Loaders: {len(train_loader)} train, {len(val_loader)} val, {len(test_loader)} test")
-print(f"  Batch size: 256, Workers: 2, Pin memory: True")
+print(f"\nLoaders ready: {len(train_loader)} train, {len(val_loader)} val, {len(test_loader)} test")
 
 # %%
 # @title 8. Load AttentiveFP Model
