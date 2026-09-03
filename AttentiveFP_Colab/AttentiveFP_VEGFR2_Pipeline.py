@@ -384,12 +384,8 @@ PATIENCE = 25
 torch.manual_seed(42)
 np.random.seed(42)
 
-# Try torch.compile for faster execution (PyTorch 2.0+)
-try:
-    model = torch.compile(model, mode="reduce-overhead")
-    print("torch.compile enabled for faster execution")
-except Exception:
-    pass
+# torch.compile incompatible with AttentiveFP's scatter_reduce + AMP
+# Skip it - AMP alone provides sufficient speedup
 
 opt = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=EPOCHS, eta_min=1e-6)
