@@ -84,16 +84,27 @@ os.chdir(REPO_DIR)
 print(f"Working directory: {os.getcwd()}")
 
 # %%
-# @title 3. Check GPU
+# @title 3. Check GPU + Maximize Resources
 import torch
 import warnings
 warnings.filterwarnings("ignore")
 
 print(f"PyTorch version: {torch.__version__}")
 if torch.cuda.is_available():
-    print(f"GPU: {torch.cuda.get_device_name(0)}")
-    print(f"VRAM: {torch.cuda.get_device_properties(0).total_mem / 1e9:.1f} GB")
+    gpu_name = torch.cuda.get_device_name(0)
+    vram = torch.cuda.get_device_properties(0).total_mem / 1e9
+    print(f"GPU: {gpu_name}")
+    print(f"VRAM: {vram:.1f} GB")
     DEVICE = torch.device("cuda")
+
+    # Maximize GPU utilization
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    torch.set_float32_matmul_precision("high")
+
+    # Auto-tune for this GPU
+    print("GPU optimizations enabled: cuDNN benchmark, TF32, fast matmul")
 else:
     print("No GPU found - using CPU (will be slower)")
     DEVICE = torch.device("cpu")
@@ -271,8 +282,8 @@ print("Building enriched graphs: [atom(32) + Morgan(2048) + MACCS(166)] = 2246-d
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 
-def make_loader(df, batch_size=128, shuffle=False):
-    """Create DataLoader with enriched graphs."""
+def make_loader(df, batch_size=256, shuffle=False):
+    """Create DataLoader with enriched graphs and max performance settings."""
     data_list = []
     for s, y in zip(df["canonical_smiles"], df["active"].astype(int)):
         try:
@@ -286,13 +297,23 @@ def make_loader(df, batch_size=128, shuffle=False):
             data_list.append(data)
         except Exception:
             pass
-    return DataLoader(data_list, batch_size=batch_size, shuffle=shuffle)
 
-train_loader = make_loader(train_df, shuffle=True)
-val_loader = make_loader(val_df)
-test_loader = make_loader(test_df)
+    return DataLoader(
+        data_list,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=2,
+        pin_memory=True,
+        persistent_workers=True,
+        drop_last=False,
+    )
+
+train_loader = make_loader(train_df, batch_size=256, shuffle=True)
+val_loader = make_loader(val_df, batch_size=256)
+test_loader = make_loader(test_df, batch_size=256)
 
 print(f"Loaders: {len(train_loader)} train, {len(val_loader)} val, {len(test_loader)} test")
+print(f"  Batch size: 256, Workers: 2, Pin memory: True")
 
 # %%
 # @title 8. Load AttentiveFP Model
@@ -312,7 +333,7 @@ print(f"AttentiveFP: {n_params:,} params")
 print(f"  Architecture: atom_fc + neighbor_fc + {layers} attention layers + {2}-step GRU readout")
 
 # %%
-# @title 9. Training Loop
+# @title 9. Training Loop (AMP + Optimized)
 from vegfr2.metrics import classification_metrics
 import torch.nn as nn
 
@@ -325,6 +346,13 @@ PATIENCE = 25
 torch.manual_seed(42)
 np.random.seed(42)
 
+# Try torch.compile for faster execution (PyTorch 2.0+)
+try:
+    model = torch.compile(model, mode="reduce-overhead")
+    print("torch.compile enabled for faster execution")
+except Exception:
+    pass
+
 opt = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=EPOCHS, eta_min=1e-6)
 
@@ -334,27 +362,48 @@ n_total = len(train_df)
 pos_weight = torch.tensor([(n_total - n_active) / max(n_active, 1)], device=DEVICE)
 loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
+# AMP (Automatic Mixed Precision) for 2x faster training
+scaler = torch.amp.GradScaler("cuda") if DEVICE.type == "cuda" else None
+use_amp = scaler is not None
+
 print(f"Training for {EPOCHS} epochs (patience={PATIENCE})...")
 print(f"  LR={LEARNING_RATE}, Weight Decay={WEIGHT_DECAY}")
 print(f"  Pos weight={pos_weight.item():.2f} (class imbalance correction)")
+print(f"  AMP: {'ON' if use_amp else 'OFF'} (mixed precision)")
 
 best_auc = -1.0
 best_state = None
 wait = 0
 history = {"train_loss": [], "val_auc": [], "val_acc": [], "val_mcc": []}
 
+import time
+t_start = time.time()
+
 for epoch in range(1, EPOCHS + 1):
     # Train
     model.train()
     total_loss = 0.0
     n_samples = 0
+
     for batch in train_loader:
-        batch = batch.to(DEVICE)
-        logits = model(batch.x, batch.edge_index, batch.batch, edge_attr=batch.edge_attr)
-        loss = loss_fn(logits.squeeze(), batch.y)
-        opt.zero_grad()
-        loss.backward()
-        opt.step()
+        batch = batch.to(DEVICE, non_blocking=True)
+
+        with torch.amp.autocast("cuda", enabled=use_amp):
+            logits = model(batch.x, batch.edge_index, batch.batch, edge_attr=batch.edge_attr)
+            loss = loss_fn(logits.squeeze(), batch.y)
+
+        opt.zero_grad(set_to_none=True)
+        if scaler:
+            scaler.scale(loss).backward()
+            scaler.unscale_(opt)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            scaler.step(opt)
+            scaler.update()
+        else:
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            opt.step()
+
         total_loss += loss.item() * batch.y.shape[0]
         n_samples += batch.y.shape[0]
     scheduler.step()
@@ -362,9 +411,9 @@ for epoch in range(1, EPOCHS + 1):
     # Validate
     model.eval()
     val_probs, val_true = [], []
-    with torch.no_grad():
+    with torch.no_grad(), torch.amp.autocast("cuda", enabled=use_amp):
         for batch in val_loader:
-            batch = batch.to(DEVICE)
+            batch = batch.to(DEVICE, non_blocking=True)
             logits = model(batch.x, batch.edge_index, batch.batch, edge_attr=batch.edge_attr)
             val_probs.extend(torch.sigmoid(logits).squeeze().cpu().numpy())
             val_true.extend(batch.y.squeeze().cpu().numpy().astype(int))
@@ -384,13 +433,16 @@ for epoch in range(1, EPOCHS + 1):
     else:
         wait += 1
         if wait >= PATIENCE:
-            print(f"  Early stopping at epoch {epoch}")
+            elapsed = time.time() - t_start
+            print(f"  Early stopping at epoch {epoch} ({elapsed:.0f}s)")
             break
 
     if epoch % 25 == 0:
-        print(f"  Epoch {epoch:3d} | loss={total_loss/n_samples:.4f} | val_AUC={val_auc:.4f} | val_MCC={val_metrics['mcc']:.4f}")
+        elapsed = time.time() - t_start
+        print(f"  Epoch {epoch:3d} | loss={total_loss/n_samples:.4f} | val_AUC={val_auc:.4f} | val_MCC={val_metrics['mcc']:.4f} | {elapsed:.0f}s")
 
-print(f"\nBest validation AUC: {best_auc:.4f}")
+total_time = time.time() - t_start
+print(f"\nBest validation AUC: {best_auc:.4f} | Total time: {total_time:.0f}s")
 
 # %%
 # @title 10. Final Test Evaluation
@@ -399,11 +451,11 @@ if best_state:
     model.load_state_dict(best_state)
 model.to(DEVICE).eval()
 
-# Test evaluation
+# Test evaluation with AMP
 test_probs, test_true = [], []
-with torch.no_grad():
+with torch.no_grad(), torch.amp.autocast("cuda", enabled=use_amp):
     for batch in test_loader:
-        batch = batch.to(DEVICE)
+        batch = batch.to(DEVICE, non_blocking=True)
         logits = model(batch.x, batch.edge_index, batch.batch, edge_attr=batch.edge_attr)
         test_probs.extend(torch.sigmoid(logits).squeeze().cpu().numpy())
         test_true.extend(batch.y.squeeze().cpu().numpy().astype(int))
