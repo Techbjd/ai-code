@@ -1,0 +1,69 @@
+molecule_name,canonical_smiles,herb_name,class
+Quercetin,O=c1c(-c2ccc(O)c(O)c2)c(O)oc2cc(O)cc(O)c12,Multi-herb,Flavonoid
+Kaempferol,O=c1c(-c2ccc(O)cc2)c(O)oc2cc(O)cc(O)c12,Ginkgo biloba,Flavonoid
+Myricetin,O=c1c(-c2cc(O)c(O)c(O)c2)c(O)oc2cc(O)cc(O)c12,Vitis vinifera,Flavonoid
+Fisetin,O=c1c(-c2ccc(O)c(O)c2)c(O)oc2c(O)cc(O)cc12,Rhus succedanea,Flavonoid
+Galangin,O=c1c(-c2ccccc2)c(O)oc2cc(O)cc(O)c12,Alpinia galanga,Flavonoid
+Isorhamnetin,COc1cc(-c2c(O)oc3cc(O)cc(O)c3c2=O)ccc1O,Ginkgo biloba,Flavonoid
+Apigenin,O=c1cc(-c2ccc(O)cc2)oc2cc(O)cc(O)c12,Parsley,Flavonoid
+Luteolin,O=c1cc(-c2ccc(O)c(O)c2)oc2cc(O)cc(O)c12,Thyme,Flavonoid
+Baicalein,O=c1c2ccc(O)cc2oc2c(O)cc(O)cc12,Scutellaria baicalensis,Flavonoid
+Naringenin,O=C1CC(c2ccc(O)cc2)Oc2cc(O)cc(O)c21,Citrus,Flavonoid
+Chrysin,O=c1cc(-c2ccccc2)oc2cc(O)cc(O)c12,Passiflora,Flavonoid
+Pinocembrin,O=C1CC(c2ccccc2)Oc2cc(O)cc(O)c21,Propolis,Flavonoid
+Catechin,Oc1ccc(CC2Oc3cc(O)c(O)cc3O2)cc1O,Green tea,Flavonoid
+Daidzein,O=c1c2ccc(O)cc2oc2cc(O)ccc12,Pueraria / Soy,Flavonoid
+Genistein,O=c1c2ccc(O)cc2oc2cc(O)cc(O)c12,Soy,Flavonoid
+Formononetin,COc1ccc(C2COc3cc(O)ccc3C2=O)cc1,Astragalus,Flavonoid
+Epicatechin,Oc1ccc(C[C@@H]2Oc3cc(O)c(O)cc3[C@@H](O)[C@H]2O)cc1O,Green tea,Flavonoid
+Berberine,COc1ccc2c(c1OC)C1=[N+]3C=Cc4cc5c(cc4C3NC1=C2)OCO5,Coptis chinensis,Alkaloid
+Coptisine,COc1ccc2c(c1OC)-[n+]1cc3c(cc1CC2)OCO3,Coptis chinensis,Alkaloid
+Jatrorrhizine,COC1=CC=C2C(OC)=c3c4cc5c(cc4cc[n+]3=C2C1=O)OCO5,Coptis chinensis,Alkaloid
+Caffeine,Cn1c(=O)c2c(ncn2C)n(C)c1=O,Camellia sinensis,Alkaloid
+Theobromine,Cn1c(=O)[nH]c2ncn(C)c2c1=O,Theobroma cacao,Alkaloid
+Nicotine,CN1CCCC1c1cccnc1,Nicotiana tabacum,Alkaloid
+Curcumin,COc1cc(/C=C/C(=O)CC(=O)/C=C/c2ccc(O)c(O)c2)ccc1O,Curcuma longa,Phenylpropanoid
+Resveratrol,Oc1ccc(/C=C/c2cc(O)cc(O)c2)cc1,Vitis vinifera,Stilbenoid
+Gallic acid,O=C(O)c1cc(O)c(O)c(O)c1,Rheum / Tea,Phenolic acid
+Chlorogenic acid,O=C(C=Cc1cc(O)c(O)c(O)c1)O[C@H]1C[C@H](O)[C@@H](O)[C@H](O)[C@H]1O,Coffee,Phenolic acid
+Caffeic acid,O=C(O)/C=C/c1cc(O)c(O)c(O)c1,Many herbs,Phenolic acid
+Ferulic acid,COc1cc(/C=C/C(=O)O)ccc1O,Angelica,Phenolic acid
+p-Coumaric acid,O=C(O)/C=C/c1ccc(O)cc1,Many herbs,Phenolic acid
+Cinnamic acid,O=C(O)/C=C/c1ccccc1,Cinnamomum,Phenylpropanoid
+Cinnamaldehyde,O=C/C=C/c1ccccc1,Cinnamomum cassia,Phenylpropanoid
+Honokiol,Oc1ccc(Cc2cc(CCc3ccccc3O)ccc2O)cc1,Magnolia officinalis,Lignan
+Magnolol,Oc1cccc(CCc2ccc(O)c(Cc3ccccc3O)c2)c1,Magnolia officinalis,Lignan
+Eugenol,C=CCc1ccc(O)c(OC)c1,Syzygium aromaticum,Phenylpropanoid
+Anethole,C/C=C/c1ccc(OC)cc1,Illicium verum,Phenylpropanoid
+Salvianolic acid B,O=C(O)c1cc(O)c(O)cc1C=Cc1c(O)cc2c(c1O)Oc1cc(O)cc(C(=O)O)c1O2,Salvia miltiorrhiza,Phenolic acid
+Rosmarinic acid,O=C(/C=C/c1ccc(O)c(O)c1)O[C@@H](Cc1ccc(O)c(O)c1)C(=O)O,Rosmarinus,Phenolic acid
+Paeonol,COc1ccc(O)cc1C(C)=O,Paeonia suffruticosa,Phenolic
+Artemisinin,COC1(C)C(=O)O[C@H]2C[C@@]3(CC[C@@H]4C(C)CCC1C4OO3)OC2=O,Artemisia annua,Terpenoid
+Artesunate,CC(=O)C[C@H]1[C@@H]2O[C@H]3O[C@](C)(CC[C@H]4OO[C@]31C4C)CC2OC(=O)CCC(=O)O,Artemisia annua,Terpenoid
+Andrographolide,CC1(C)C(CC(=O)C2=CCOC2=O)=C[C@@H]2[C@H]3[C@](C)(CO)[C@@H](O)CC[C@@]3(C)[C@@H]21,Andrographis paniculata,Terpenoid
+Tanshinone IIA,Cc1c2c(cc3c1C(=O)C(=O)c1ccccc1-3)C[C@@H](C)CC2,Salvia miltiorrhiza,Diterpenoid
+Miltirone,C=CCC1=Cc2cc3ccccc3c(C)c2CC[C@@H]1C,Salvia miltiorrhiza,Diterpenoid
+Oleanolic acid,C[C@@H]1CC[C@]2(C)CC[C@H]3[C@@H]4CC[C@]5(C)[C@H](C(=O)O)CC[C@@]5(C)[C@H]4[C@H](O)C[C@@H]3[C@]2(C)CC1,Olea europaea,Triterpenoid
+Ursolic acid,C[C@H]1CC[C@]2(C)C[C@H]1C[C@H]1[C@@H]3CC[C@]4(C)[C@H](C(=O)O)CC[C@@]4(C)[C@H]3[C@H](O)C[C@@H]12,Many herbs,Triterpenoid
+Betulinic acid,C[C@H]1CC[C@]2(C)C[C@@H]1C[C@H]1[C@@H]3CC[C@]4(C)[C@](C)(CO)CC[C@@]4(C)[C@H]3[C@H](O)C[C@@H]12,Betula alba,Triterpenoid
+Celastrol,CC1CCC2(CC[C@]3(C)C4=CC(=O)C(=O)C=C4C(=O)C3C2)C1(C)C,Tripterygium wilfordii,Terpenoid
+Emodin,CC1=CC(=O)c2cc(O)cc(O)c2C1=O,Rheum palmatum,Anthraquinone
+Rhein,O=C(O)c1cc2c(c(O)c1O)C(=O)c1ccccc1C2=O,Rheum palmatum,Anthraquinone
+Aloe-emodin,O=C1C=C(CO)C(=O)c2c(O)cc(O)cc21,Aloe vera,Anthraquinone
+Chrysophanol,CC1=CC(=O)c2c(O)cc(O)cc2C1=O,Rheum,Anthraquinone
+Alizarin,O=C1c2ccccc2C(=O)c2cc(O)c(O)cc21,Rubia cordifolia,Anthraquinone
+Coumarin,O=c1ccc2ccccc2o1,Melilotus,Coumarin
+Esculetin,O=c1ccc2cc(O)c(O)cc2o1,Fraxinus,Coumarin
+Scopoletin,COc1cc2occc(=O)c2cc1O,Scopolia,Coumarin
+Umbelliferone,O=c1ccc2ccc(O)cc2o1,Angelica,Coumarin
+Osthole,COc1ccc2c(=O)occc2c1CC=C(C)C,Cnidium monnieri,Coumarin
+Plumbagin,CC1=CC(=O)c2c(O)cccc2C1=O,Plumbago zeylanica,Naphthoquinone
+Shikonin,CC(C)=CCc1c(O)oc2c(O)cc(C)c(=O)c-2c1O,Lithospermum,Naphthoquinone
+Camptothecin,COC(=O)c1c2n(c(=O)c3ccccc13)Cc1c-2[nH]c(=O)c2ncccc12,Camptotheca acuminata,Alkaloid
+Matrine,CC12CC3CCCN(CCCC1CC2=O)C3,Sophora flavescens,Alkaloid
+Oxymatrine,CC12CC3CCC[N+]([O-])(CCCC1CC2=O)C3,Sophora flavescens,Alkaloid
+Sinomenine,COc1ccc2c(c1O)CC[C@@H]1[C@@H]3Cc4c(ccc(OC)c4O)[C@H]3CCN1C2,Sinomenium acutum,Alkaloid
+Geniposide,COC(=O)C1=CO[C@@H]2O[C@H](CO)[C@@H](O)[C@H](O)[C@H]2O[C@@H]2CC=C(C1)C2,Gardenia,Iridoid glycoside
+Catalpol,OCC1OCC2(O)C(O)C3C4OC(OC14)C(O)C32,Rehmannia,Iridoid glycoside
+Loganin,COC(=O)C1C(C)CC(O)C(OC2OC(CO)C(O)C(O)C2O)C1O,Strychnos,Iridoid glycoside
+Pterostilbene,COc1ccc(/C=C/c2ccc(O)cc2)c(OC)c1,Pterocarpus,Stilbenoid

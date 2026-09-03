@@ -681,83 +681,53 @@ torch.save({
 print(f"Model saved to {save_dir / 'attentivefp_vegfr2.pt'}")
 
 # %%
-# @title 15. Screen Chinese Medicine Compounds (TCMSP)
-# Download TCMSP data (traditional Chinese medicine compounds)
+# @title 15. Screen Chinese Medicine Compounds (TCM monomer library)
+# Load the bundled curated TCM monomer library (data/tcm_monomer_library.csv)
 print("=" * 60)
-print("SCREENING CHINESE MEDICINE COMPOUNDS")
+print("SCREENING CHINESE MEDICINE MONOMERS")
 print("=" * 60)
 
-# TCMSP API for downloading compound data
-# We'll download a subset of TCM compounds with SMILES
-tcmsp_url = "https://raw.githubusercontent.com/tcm-spider/tcmsp/master/data/tcm_spider_20230828.csv"
+tcm_lib_paths = [
+    "data/tcm_monomer_library.csv",   # repo-relative (Colab clone)
+    "../data/tcm_monomer_library.csv",  # notebook-relative fallback
+]
 
-print("Downloading TCMSP compound data...")
-try:
-    tcm_df = pd.read_csv(tcmsp_url, low_memory=False)
-    print(f"  Loaded {len(tcm_df)} TCMSP entries")
-except Exception as e:
-    print(f"  TCMSP download failed: {e}")
-    print("  Creating demo Chinese medicine compound set...")
+tcm_df = None
+for p in tcm_lib_paths:
+    if os.path.exists(p):
+        try:
+            tcm_df = pd.read_csv(p)
+            print(f"  Loaded curated TCM monomer library from {p} ({len(tcm_df)} compounds)")
+            break
+        except Exception as e:
+            print(f"  Failed to read {p}: {e}")
+            tcm_df = None
 
-    # Fallback: known VEGFR2-related Chinese medicine compounds
-    demo_tcm = pd.DataFrame({
-        "molecule_name": [
-            "Curcumin", "Berberine", "Resveratrol", "Quercetin", "EGCG",
-            "Apigenin", "Luteolin", "Kaempferol", "Fisetin", "Myricetin",
-            "Ginsenoside Rg3", "Ginsenoside Rb1", "Tanshinone IIA", "Salvianolic acid B",
-            "Andrographolide", "Baicalein", "Wogonin", "Oroxylin A", "Scutellarin",
-            "Honokiol", "Magnolol", "Emodin", "Rhein", "Aloe-emodin",
-            "Artemisinin", "Artesunate", "Camptothecin", "Huang Qin Tang",
-            "Liu Wei Di Huang", "Zhi Bai Di Huang",
-        ],
-        "canonical_smiles": [
-            "CC(=O)Oc1cc(O)c2c(c1)oc(-c1ccc(O)c(O)c1)cc2=O",
-            "COc1ccc2cc3cc4c(c3cc2c1O)OCO4",
-            "O=c1cc(-c2ccc(O)cc2)oc2cc(O)cc(O)c12",
-            "OC1Cc2c(OC1c1ccc(O)c(O)c1)cc(=O)c(O)c(O)c2",
-            "OC1C(O)c2c(OC1c1ccc(O)c(O)c1)cc(=O)c(O)c(O)c2",
-            "O=c1cc(-c2ccc(O)cc2)oc2cc(O)ccc12",
-            "O=c1cc(-c2ccc(O)c(O)c2)oc2cc(O)cc(O)c12",
-            "O=c1cc(-c2ccc(O)cc2)oc2cc(O)c(O)cc12",
-            "O=c1cc(-c2ccc(O)cc2)oc2c(O)cc(O)cc12",
-            "O=c1cc(-c2ccc(O)c(O)c2)oc2c(O)c(O)cc(O)c12",
-            "CC1(C)C2CCC3C(CCC4C3(CCC4C2(CCC1O)C)C)C(C)O",
-            "CC1(C)C2CCC3C(CCC4C3(CCC4C2(CCC1O)C)C)C(C)OC1OC(CO)C(O)C(O)C1Oc1c(O)cc(O)cc1C(=O)OC",
-            "CC1=CC(=O)c2ccccc2C1=Cc1ccc2cc3c(c2c1)OCO3",
-            "OC(=O)CC(C(=O)O)c1ccc(O)c(O)c1",
-            "CC1(C)C2CCC3C(CCC4C3(CCC4C2(CCC1O)C)C)C(C)OC1OC(CO)C(O)C(O)C1O",
-            "O=c1cc(-c2cc(O)c(O)cc2)oc2cc(O)cc(O)c12",
-            "COc1cc2c(=O)[nH]cnc2cc1O",
-            "COc1cc2c(=O)[nH]cnc2cc1OC",
-            "OC1Cc2c(OC1c1cc(O)c(O)cc1O)cc(=O)c(O)c(O)c2",
-            "Oc1ccc(-c2cc(O)cc(-c3ccc(O)cc3)c2O)cc1",
-            "Oc1ccc(-c2cc(O)cc(-c3ccc(O)c(O)c3)c2O)cc1",
-            "CC1=CC(=O)c2cc(O)ccc2C1Cc1cc(O)c(O)cc1",
-            "OC(=O)c1cc(O)c(O)cc1",
-            "O=C(O)c1ccc(O)c(O)c1",
-            "CC12CCC3C(CCC4C3(CCC4C2CC=C1)C)C",
-            "CC12CCC3C(CCC4C3(CCC4C2CC=C1O)C)C(=O)O",
-            "CCC1=CC(=O)c2cc3cc4c(c3cc2C1)OCO4",
-            "O=c1cc(-c2ccc(O)cc2)oc2cc(O)cc(O)c12",
-            "OC1Cc2c(OC1c1ccc(O)c(O)c1)cc(=O)c(O)c(O)c2",
-            "OC1Cc2c(OC1c1ccc(O)c(O)c1)cc(=O)c(O)c(O)c2",
-        ],
-        "herb_name": [
-            "Turmeric", "Coptis chinensis", "Grape skin", "Onion", "Green tea",
-            "Chamomile", "Thyme", "Broccoli", "Strawberry", "Walnut",
-            "Panax ginseng", "Panax ginseng", "Salvia miltiorrhiza", "Salvia miltiorrhiza",
-            "Andrographis paniculata", "Scutellaria baicalensis", "Scutellaria baicalensis",
-            "Scutellaria baicalensis", "Scutellaria baicalensis",
-            "Magnolia officinalis", "Magnolia officinalis",
-            "Rheum palmatum", "Rheum palmatum", "Rheum palmatum",
-            "Artemisia annua", "Artemisia annua", "Camptotheca acuminata",
-            "Multi-herb formula", "Multi-herb formula", "Multi-herb formula",
-        ],
-    })
-    tcm_df = demo_tcm
-    print(f"  Using {len(tcm_df)} demo TCM compounds")
+if tcm_df is None:
+    # Fallback: remote raw GitHub copy of the bundled library
+    tcmsp_url = ("https://raw.githubusercontent.com/Techbjd/ai-code/restructured-pipeline/"
+                 "data/tcm_monomer_library.csv")
+    print("Falling back to remote GitHub copy of the library...")
+    try:
+        tcm_df = pd.read_csv(tcmsp_url)
+        print(f"  Loaded {len(tcm_df)} TCM monomers from GitHub")
+    except Exception as e:
+        print(f"  Library download failed: {e}")
+        tcm_df = pd.DataFrame({
+            "molecule_name": ["Curcumin", "Berberine", "Resveratrol", "Quercetin", "Baicalein"],
+            "canonical_smiles": [
+                "COc1cc(/C=C/C(=O)CC(=O)/C=C/c2ccc(O)c(O)c2)ccc1O",
+                "COc1ccc2cc3c(c2c1OC)[n+]1ccc2cc4OCOc4cc2C1N3",
+                "Oc1ccc(/C=C/c2cc(O)cc(O)c2)cc1",
+                "OC1=C(C(=O)c2c(O)cc(O)cc2O1)c1ccc(O)c(O)c1",
+                "O=c1c2cc(O)cc(O)c2oc2cc(O)ccc12",
+            ],
+            "herb_name": ["Turmeric", "Coptis chinensis", "Grape skin", "Multi-herb", "Scutellaria"],
+        })
+        print(f"  Using {len(tcm_df)} fallback TCM compounds")
 
-print(f"\nTCMSP data loaded: {len(tcm_df)} compounds")
+print(f"\nTCM monomer library loaded: {len(tcm_df)} compounds")
+print(f"Columns: {list(tcm_df.columns)}")
 tcm_df.head(10)
 
 # %%
