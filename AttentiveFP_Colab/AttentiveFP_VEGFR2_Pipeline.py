@@ -44,7 +44,7 @@ Reference:
 
 # %%
 # @title 1. Install Dependencies (Colab-optimized)
-import subprocess, sys
+import subprocess, sys, importlib, os
 
 # Colab already has: torch, numpy, pandas, matplotlib, scikit-learn
 # Only install what's missing
@@ -60,7 +60,23 @@ for name in ["rdkit", "torch_geometric", "xgboost", "optuna"]:
         print(f"  {name}: INSTALLING...")
 
 if pkgs_to_install:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q"] + pkgs_to_install)
+    # Use os.system for Colab compatibility (subprocess may install to wrong Python)
+    for pkg in pkgs_to_install:
+        os.system(f"{sys.executable} -m pip install -q {pkg}")
+    importlib.invalidate_caches()
+    # Verify installs worked
+    still_missing = []
+    for name in pkgs_to_install:
+        try:
+            __import__(name)
+            print(f"  {name}: OK (installed)")
+        except ImportError:
+            still_missing.append(name)
+    if still_missing:
+        print(f"\n  WARNING: {still_missing} installed but not loadable.")
+        print("  Please restart runtime: Runtime -> Restart runtime")
+        print("  Then re-run all cells from the top.")
+        raise SystemExit("Restart runtime required for: " + ", ".join(still_missing))
 
 print("All packages ready!")
 
@@ -92,7 +108,7 @@ warnings.filterwarnings("ignore")
 print(f"PyTorch version: {torch.__version__}")
 if torch.cuda.is_available():
     gpu_name = torch.cuda.get_device_name(0)
-    vram = torch.cuda.get_device_properties(0).total_mem / 1e9
+    vram = torch.cuda.get_device_properties(0).total_memory / 1e9
     print(f"GPU: {gpu_name}")
     print(f"VRAM: {vram:.1f} GB")
     DEVICE = torch.device("cuda")
