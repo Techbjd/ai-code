@@ -43,31 +43,24 @@ Reference:
 # ```
 
 # %%
-# @title 1. Install Dependencies
-print("Installing packages...")
+# @title 1. Install Dependencies (Colab-optimized)
+import subprocess, sys
 
-import subprocess
-import sys
+# Colab already has: torch, rdkit, numpy, pandas, matplotlib, scikit-learn
+# Only install what's missing
+print("Checking packages...")
 
-packages = [
-    "rdkit",
-    "torch",
-    "torch_geometric",
-    "scikit-learn",
-    "pandas",
-    "numpy",
-    "matplotlib",
-    "xgboost",
-    "optuna",
-]
+pkgs_to_install = []
+for name in ["torch_geometric", "xgboost", "optuna"]:
+    try:
+        __import__(name)
+        print(f"  {name}: OK")
+    except ImportError:
+        pkgs_to_install.append(name)
+        print(f"  {name}: INSTALLING...")
 
-for pkg in packages:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", pkg])
-
-# Install torch_geometric dependencies
-subprocess.check_call([sys.executable, "-m", "pip", "install", "-q",
-                       "torch_scatter", "torch_sparse", "torch_cluster", "torch_spline_conv"],
-                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+if pkgs_to_install:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q"] + pkgs_to_install)
 
 print("All packages ready!")
 
