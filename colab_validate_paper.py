@@ -590,8 +590,15 @@ for idx, row in top6.iterrows():
         continue
 
     mol = Chem.AddHs(mol)
-    AllChem.EmbedMolecule(mol, AllChem.ETKDGv3())
-    AllChem.MMFFOptimizeMolecule(mol)
+    embed_result = AllChem.EmbedMolecule(mol, AllChem.ETKDGv3())
+    if embed_result == 0:
+        try:
+            AllChem.MMFFOptimizeMolecule(mol)
+        except Exception:
+            pass
+    else:
+        print(f"  Warning: Embedding failed for {row['name']}, using random conformer")
+        AllChem.EmbedMolecule(mol, AllChem.ETKDGv3(), useRandomCoords=True)
     mol.SetProp("_Name", row["name"])
     mol.SetProp("ConsensusScore", str(row["consensus_score"]))
     top6_mols.append(mol)
