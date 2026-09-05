@@ -13,7 +13,7 @@ This makes ML models closer to the paper's approach (Morgan FP input).
 # %%
 # @title 1. Install Dependencies
 print("Installing packages...")
-%pip install -q rdkit-pypi torch_geometric xgboost scikit-learn pandas numpy pyyaml requests
+%pip install -q rdkit torch_geometric xgboost scikit-learn pandas numpy pyyaml requests
 print("All packages ready!")
 
 # %%
@@ -105,7 +105,10 @@ def get_enriched_features(smiles_list, label=""):
         # RDKit descriptors
         try:
             desc_vals = list(calc.CalcDescriptors(mol))
-            rdkit_descs.append(np.array(desc_vals, dtype=np.float32))
+            desc_arr = np.array(desc_vals, dtype=np.float64)
+            # Replace inf/nan with 0
+            desc_arr = np.nan_to_num(desc_arr, nan=0.0, posinf=0.0, neginf=0.0)
+            rdkit_descs.append(desc_arr.astype(np.float32))
         except Exception:
             rdkit_descs.append(np.zeros(len(desc_names)))
 
