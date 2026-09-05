@@ -630,13 +630,50 @@ Rank  Molecule         Score   ML(morgan) ML(maccs) GIN    PNA    GCN
 - Only 190 unique molecules ended up in screening (from local fallback + COCONUT overlap)
 
 ### Remaining Issues
-- `warnings.filterwarnings` doesn't suppress warnings from threads (torch_scatter still appears)
+- `warnings.filterwarnings` doesn't suppress warnings from threads (torch_scatter still appears) — FIXED in `train_all_gnn()` and `screen_gnn()` inside threads
 - TCM-MKG download needs SMILES column detection fix
-- Paper's molecules should be in the screening database for validation
+- Paper's molecules should be in the screening database for validation — FIXED: always included via `paper_molecules` DataFrame in `download_tcm_libraries()`
 
 ### Next Steps
 - [ ] Fix TCM-MKG download to find SMILES column correctly
-- [ ] Ensure paper's 6 molecules are always included in screening
+- [ ] Ensure paper's 6 molecules are always included in screening — DONE
 - [ ] Run molecular docking with AutoDock Vina (PDB: 4ASE)
 - [ ] Perform MD simulations (100 ns)
 - [ ] Calculate MM-PBSA binding free energies
+
+---
+
+## Session 12: Paper Validation Script (2026-09-05)
+
+### Goal
+Validate the paper's 6 molecules through the trained models and screen a fresh dataset of previously unused molecules.
+
+### What Was Done
+- Created `colab_validate_paper.py` — complete pipeline that:
+  1. Trains all 11 models (6 ML + 5 GNN) in parallel
+  2. Validates paper's 6 molecules (Cynaroside, Luteolin 7-O-glucuronide, Scutellarin, Diosmin, Rhoifolin, Beta-Carotene)
+  3. Screens fresh COCONUT dataset (3000 molecules NOT in previous 190)
+  4. Generates 3D SDF structures for docking
+
+### Paper Validation Details
+- Paper's 3 SUCCESS molecules → should be predicted ACTIVE
+- Paper's 3 FAIL molecules → should be predicted INACTIVE
+- Comparison with paper's IC50 values: Cynaroside (2698nM), Luteolin 7-O-glucuronide (5969nM), Scutellarin (8349nM)
+
+### Fresh Screening
+- COCONUT Drug Discovery subset (3000 molecules)
+- Previously screened molecules excluded
+- Paper's molecules excluded from fresh set
+
+### Files Created
+- `colab_validate_paper.py` — main pipeline (~500 lines)
+
+### Git
+- Commit: `ae9e5df` + new commit with `colab_validate_paper.py`
+- Branch: `restructured-pipeline`
+
+### Run Instructions
+1. Open Google Colab
+2. Upload `colab_validate_paper.py`
+3. Run all cells (takes ~15-20 min)
+4. Output: paper validation table + fresh screening results + 3D SDF
