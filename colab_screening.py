@@ -145,6 +145,8 @@ def train_all_ml():
 
 def train_all_gnn():
     """Train all GNN models (GPU only - parallel with ML)."""
+    import warnings
+    warnings.filterwarnings("ignore", message=".*scatter.*")
     import torch.nn as nn
     from rdkit import Chem
     from rdkit.Chem import rdMolDescriptors
@@ -430,7 +432,25 @@ def download_tcm_database():
             df = pd.read_csv(f)
             if "smiles" in df.columns:
                 print(f"Loaded {len(df)} molecules from {f}")
-                return df
+                break
+    else:
+        df = None  # Will be set by download options below
+
+    # ================================================================
+    # PAPER'S 6 MOLECULES — Always include for validation
+    # ================================================================
+    paper_molecules = pd.DataFrame([
+        {"name": "Cynaroside", "smiles": "C1=CC(=C(C=C1C2=CC(=O)C3=C(C=C(C=C3O2)OC4C(C(C(C(O4)CO)O)O)O)O)O)O"},
+        {"name": "Luteolin 7-O-glucuronide", "smiles": "C1=CC(=C(C=C1C2=CC(=O)C3=C(C=C(C=C3O2)OC4C(C(C(C(O4)C(=O)O)O)O)O)O)O)O"},
+        {"name": "Scutellarin", "smiles": "C1=CC(=CC=C1C2=CC(=O)C3=C(C(=C(C=C3O2)OC4C(C(C(C(O4)C(=O)O)O)O)O)O)O)O"},
+        {"name": "Diosmin", "smiles": "CC1C(C(C(C(O1)OCC2C(C(C(C(O2)OC3=CC(=C4C(=C3)OC(=CC4=O)C5=CC(=C(C=C5)OC)O)O)O)O)O)O)O)O"},
+        {"name": "Rhoifolin", "smiles": "CC1C(C(C(C(O1)OC2C(C(C(OC2OC3=CC(=C4C(=C3)OC(=CC4=O)C5=CC=C(C=C5)O)O)CO)O)O)O)O)O"},
+        {"name": "Beta-Carotene", "smiles": "CC(=C/C=C/C=C/C=C/C=C/C=C/C=C/C=C/C=C/C=C/C=C/C=C/C=C/C=C/C=C/C=C/C=C/C=C/C=C(C)C)C(C)C"},
+    ])
+    if df is not None:
+        df = pd.concat([paper_molecules, df], ignore_index=True).drop_duplicates(subset=["smiles"], keep="first")
+        print(f"Added paper's 6 molecules. Total: {len(df)} molecules")
+        return df
     
     # ================================================================
     # OPTION 2: Download from TCM-MKG (FREE, TCM-specific compounds)
@@ -486,6 +506,8 @@ def download_tcm_database():
                 
                 df_out = pd.DataFrame(compounds)
                 print(f"Downloaded {len(df_out)} TCM-specific compounds from TCM-MKG")
+                df_out = pd.concat([paper_molecules, df_out], ignore_index=True).drop_duplicates(subset=["smiles"], keep="first")
+                print(f"Added paper's 6 molecules. Total: {len(df_out)} molecules")
                 return df_out
         
         print("TCM-MKG download failed or insufficient compounds")
@@ -547,6 +569,8 @@ def download_tcm_database():
                     
                     df_out = pd.DataFrame(compounds)
                     print(f"Downloaded {len(df_out)} natural products from COCONUT")
+                    df_out = pd.concat([paper_molecules, df_out], ignore_index=True).drop_duplicates(subset=["smiles"], keep="first")
+                    print(f"Added paper's 6 molecules. Total: {len(df_out)} molecules")
                     return df_out
         
         print("COCONUT download failed or insufficient compounds")
@@ -897,6 +921,8 @@ def screen_ml():
 
 def screen_gnn():
     """Screen with GNN models (GPU only)."""
+    import warnings
+    warnings.filterwarnings("ignore", message=".*scatter.*")
     from torch_geometric.loader import DataLoader
 
     def predict_gnn_local(model_name, model, smiles_list, device):

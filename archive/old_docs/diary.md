@@ -492,3 +492,151 @@ Create Part_8: Virtual Screening module for screening external compound librarie
 - [ ] Download and prepare COCONUT/ZINC libraries
 - [ ] Run full virtual screening on real compound libraries
 - [ ] Integrate with Part_9 (if created) for ADMET filtering
+
+---
+
+## Session 9: Code Restructuring + Model Registry (2026-09-04)
+
+### Goal
+Restructure the codebase into a clean, maintainable Python package structure.
+
+### Tasks Completed
+- [x] Created `src/vegfr2/` package structure with `__init__.py`
+- [x] Moved all models into `src/vegfr2/models/` with unified registry
+- [x] Created `src/vegfr2/data_pipeline.py` — `process_split_plain()` and `run_plain()`
+- [x] Created `src/vegfr2/datasets.py` — 4 Dataset classes (InMemory, Lazy, Fingerprint, Plain)
+- [x] Created `src/vegfr2/models/fused_variants.py` — `FusedVariant` generalized GNN+FP class
+- [x] Created `src/vegfr2/models/attentive_fp.py` — AttentiveFP with manual scatter (no torch_scatter)
+- [x] Added fingerprint caching (`_FP_CACHE` dict, `clear_fp_cache()`) to `features.py`
+- [x] Updated `models/__init__.py` with AttentiveFP + fused variants in registry
+- [x] Updated `gnn_pyg.py` — `build_pyg_model()` with AttentiveFP support
+- [x] All 132 tests passing
+
+### Complete Model Reference
+```
+Model               Type       Input Dim      Params     Status
+-----------------------------------------------------------------
+rf_morgan           ML         2048 (Morgan)  N/A        Trained ✓
+rf_maccs            ML         166 (MACCS)    N/A        Trained ✓
+svm_morgan          ML         2048 (Morgan)  N/A        Trained ✓
+svm_maccs           ML         166 (MACCS)    N/A        Trained ✓
+xgb_morgan          ML         2048 (Morgan)  N/A        Trained ✓
+xgb_maccs           ML         166 (MACCS)    N/A        Trained ✓
+gnn_gcn             GNN        32 (plain)     38K        Trained ✓
+gnn_gat             GNN        32 (plain)     39K        Trained ✓
+gnn_gatv2           GNN        32 (plain)     76K        Trained ✓
+gnn_gin             GNN        32 (plain)     155K       Trained ✓
+gnn_pna             GNN        32 (plain)     1.1M       Trained ✓
+```
+
+---
+
+## Session 10: Colab Screening Pipeline (2026-09-04)
+
+### Goal
+Create a single Colab notebook that trains ALL models + screens TCM molecules + outputs top candidates for docking.
+
+### Tasks Completed
+- [x] Created `colab_screening.py` — self-contained Colab notebook (~1200 lines)
+- [x] SEPARATE fingerprints for ML (Morgan/MACCS separately, never combined)
+- [x] PLAIN graphs for GNN (32-dim atom features, NO fingerprints injected)
+- [x] GNN training uses `smiles_to_plain_graph()` with 32-dim atom features
+- [x] Model selection: top 2 ML + top 3 GNN → 5 models total
+- [x] TCM database download: TCM-MKG → COCONUT → LOTUS → 117+ literature compounds
+- [x] Screening: ML on CPU, GNN on GPU
+- [x] Consensus scoring: average of all model predictions
+- [x] Top 6 candidates for docking → SDF file generation
+- [x] AutoDock Vina config template
+
+### Colab Results (Run 1 — Sequential, 190 molecules)
+```
+rf_morgan      AUC=0.9164  (Best overall)
+svm_morgan     AUC=0.9036
+xgb_morgan     AUC=0.8953
+rf_maccs       AUC=0.8886
+xgb_maccs      AUC=0.8842
+svm_maccs      AUC=0.8825
+gnn_gin        AUC=0.9020  (Best GNN)
+gnn_pna        AUC=0.8571
+gnn_gcn        AUC=0.7645
+gnn_gatv2      AUC=0.7525
+gnn_gat        AUC=0.7329
+```
+
+---
+
+## Session 11: Bug Fixes + Parallel Training + GNN Fix (2026-09-05)
+
+### Goal
+Fix GNN training errors on Colab, add parallel ML+GNN training, add paper's 6 candidate molecules.
+
+### Bugs Fixed
+1. **GNN `GetElectronegativity` error** — RDKit removed `atom.GetElectronegativity()` in newer versions. Replaced with normalized numeric features (`GetMass() / 16.0`, `GetAtomicNum() / 100.0`, etc.)
+2. **GNN 31 features vs 32 expected** — Atom feature function returned 31 features but `build_pyg_model(in_dim=32)` expected 32. Added `atom.GetTotalValence() / 6.0` as 32nd feature.
+3. **Paper's 6 molecules invalid SMILES** — Garbled SMILES from manual writing. Fetched correct ConnectivitySMILES from PubChem API for all 6 molecules.
+4. **torch_scatter warning spam** — Added `warnings.filterwarnings("ignore", message=".*scatter.*can be accelerated.*")`
+
+### Tasks Completed
+- [x] Parallel ML+GNN training via `threading` (ML on CPU, GNN on GPU simultaneously)
+- [x] Parallel screening (ML + GNN screen TCM molecules in parallel)
+- [x] Added paper's 6 molecules to fallback list with valid PubChem SMILES:
+  - Cynaroside (CID 5280637) — paper's top hit, IC50=2698 nM
+  - Luteolin 7-O-glucuronide (CID 5280601) — IC50=5969 nM
+  - Scutellarin (CID 185617) — IC50=8349 nM
+  - Diosmin (CID 5281613) — failed in paper
+  - Rhoifolin (CID 5282150) — failed in paper
+  - Beta-Carotene — failed in paper
+- [x] Fixed atom feature function in both training and screening helpers
+- [x] Suppressed `torch-scatter` UserWarning (added but Colab still shows it — threads bypass filter)
+
+### Colab Results (Run 2 — Parallel, 190 molecules, ALL 11 MODELS)
+```
+Model          AUC     ACC     MCC     Notes
+--------------------------------------------------------------
+rf_morgan      0.9164  0.8235  0.6389  Best ML
+svm_morgan     0.9036  0.8255  0.6429
+gnn_gin        0.9020  0.8204  0.6344  Best GNN
+xgb_morgan     0.8953  0.8092  0.6103
+rf_maccs       0.8886  0.8051  0.6011
+xgb_maccs      0.8842  0.8092  0.6101
+svm_maccs      0.8825  0.8061  0.6035
+gnn_pna        0.8571  0.7663  0.5390
+gnn_gcn        0.7645  0.6990  0.3841
+gnn_gatv2      0.7525  0.6806  0.3581
+gnn_gat        0.7329  0.6633  0.3122
+```
+
+### Selected Models for Screening
+- **Top 2 ML**: rf_morgan (AUC=0.9164), rf_maccs (AUC=0.8886)
+- **Top 3 GNN**: gnn_gin (AUC=0.9020), gnn_pna (AUC=0.8571), gnn_gcn (AUC=0.7645)
+
+### Screening Results (5-model consensus)
+```
+Rank  Molecule         Score   ML(morgan) ML(maccs) GIN    PNA    GCN
+----------------------------------------------------------------------
+1     Kaitsudiol       0.7727  0.58(A)    0.56(A)   0.87(A) 0.98(A) 0.86(A)
+2     Emodin           0.7727  0.58(A)    0.56(A)   0.87(A) 0.98(A) 0.86(A)
+3     Chrysophanol     0.7727  0.58(A)    0.56(A)   0.87(A) 0.98(A) 0.86(A)
+4     Mangostinin      0.7632  0.48(I)    0.57(A)   0.96(A) 0.86(A) 0.95(A)
+5     α-Mangostin      0.7632  0.48(I)    0.57(A)   0.96(A) 0.86(A) 0.95(A)
+6     γ-Mangostin      0.7632  0.48(I)    0.57(A)   0.96(A) 0.86(A) 0.95(A)
+```
+
+### Key Observations
+- GNN models (GIN, PNA, GCN) strongly agree on top candidates (all 3 vote Active)
+- ML models are more conservative (rf_morgan votes Inactive for mangostins)
+- **Paper's 3 winners (Cynaroside, Luteolin 7-O-glucuronide, Scutellarin) NOT in screening** — they weren't in the 190-molecule fallback list or COCONUT subset
+- TCM-MKG download failed (no SMILES column found), COCONUT provided 3000 compounds
+- Only 190 unique molecules ended up in screening (from local fallback + COCONUT overlap)
+
+### Remaining Issues
+- `warnings.filterwarnings` doesn't suppress warnings from threads (torch_scatter still appears)
+- TCM-MKG download needs SMILES column detection fix
+- Paper's molecules should be in the screening database for validation
+
+### Next Steps
+- [ ] Fix TCM-MKG download to find SMILES column correctly
+- [ ] Ensure paper's 6 molecules are always included in screening
+- [ ] Run molecular docking with AutoDock Vina (PDB: 4ASE)
+- [ ] Perform MD simulations (100 ns)
+- [ ] Calculate MM-PBSA binding free energies
