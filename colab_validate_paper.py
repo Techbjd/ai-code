@@ -584,25 +584,26 @@ sdf_writer = None
 top6_mols = []
 
 for idx, row in top6.iterrows():
-    mol = Chem.MolFromSmiles(row["smiles"])
-    if mol is None:
-        print(f"  Skipped: {row['name']} (invalid SMILES)")
-        continue
+    try:
+        mol = Chem.MolFromSmiles(row["smiles"])
+        if mol is None:
+            print(f"  Skipped: {row['name']} (invalid SMILES)")
+            continue
 
-    mol = Chem.AddHs(mol)
-    embed_result = AllChem.EmbedMolecule(mol, AllChem.ETKDGv3())
-    if embed_result == 0:
+        mol = Chem.AddHs(mol)
+        embed_result = AllChem.EmbedMolecule(mol, AllChem.ETKDGv3())
+        if embed_result != 0:
+            AllChem.EmbedMolecule(mol, AllChem.ETKDGv3(), useRandomCoords=True)
         try:
             AllChem.MMFFOptimizeMolecule(mol)
         except Exception:
             pass
-    else:
-        print(f"  Warning: Embedding failed for {row['name']}, using random conformer")
-        AllChem.EmbedMolecule(mol, AllChem.ETKDGv3(), useRandomCoords=True)
-    mol.SetProp("_Name", row["name"])
-    mol.SetProp("ConsensusScore", str(row["consensus_score"]))
-    top6_mols.append(mol)
-    print(f"  Generated: {row['name']}")
+        mol.SetProp("_Name", row["name"])
+        mol.SetProp("ConsensusScore", str(row["consensus_score"]))
+        top6_mols.append(mol)
+        print(f"  Generated: {row['name']}")
+    except Exception as e:
+        print(f"  Skipped: {row['name']} ({e})")
 
 if top6_mols:
     writer = Chem.SDWriter("fresh_top_hits_3d.sdf")
