@@ -440,9 +440,9 @@ for m in all_models:
 # %%
 # @title 13. Screen Free TCM Database (Paper: TCMSP screening)
 print("=" * 80)
-print("SCREENING FREE TCM DATABASE (68 compounds)")
+print("SCREENING FREE TCM DATABASE (198 compounds)")
 print("Paper: TCMSP database used for virtual screening")
-print("Using: tcm_monomer_library.csv (free monomers)")
+print("Using: tcm_monomer_library.csv (free TCM monomers)")
 print("=" * 80)
 
 tcm_lib = pd.read_csv("data/tcm_monomer_library.csv")
