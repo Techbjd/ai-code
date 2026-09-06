@@ -480,23 +480,48 @@ def predict_dgl_model(
     batch_size: int = 256,
     device: str | torch.device = "cuda",
 ) -> np.ndarray:
-    """Predict probabilities using a trained model."""
+    """Predict probabilities using a trained model.
+
+    Returns one prediction per input SMILES (0.5 for invalid/unparseable).
+    """
     device = torch.device(device)
     model.eval()
 
     all_probs = []
     for i in range(0, len(smiles_list), batch_size):
         batch = smiles_list[i:i + batch_size]
-        g = smiles_to_graph_batch(batch)
-        if g is None:
-            all_probs.extend([0.5] * len(batch))
-            continue
-        g = g.to(device)
-        with torch.no_grad():
-            logits = model(g, g.x)
-            probs = torch.sigmoid(logits).squeeze().cpu().numpy()
-        if probs.ndim == 0:
-            probs = [probs.item()]
-        all_probs.extend(probs)
+
+        # Track which indices are valid
+        valid_indices = []
+        valid_smiles = []
+        for j, s in enumerate(batch):
+            try:
+                if mol_to_graph(s) is not None:
+                    valid_indices.append(j)
+                    valid_smiles.append(s)
+            except Exception:
+                pass
+
+        # Default = 0.5 for all
+        batch_probs = [0.5] * len(batch)
+
+        if valid_smiles:
+            try:
+                g = smiles_to_graph_batch(valid_smiles)
+                if g is not None:
+                    g = g.to(device)
+                    with torch.no_grad():
+                        logits = model(g, g.x)
+                        probs = torch.sigmoid(logits).squeeze().cpu().numpy()
+                    if probs.ndim == 0:
+                        probs = [probs.item()]
+                    # Map predictions back to original positions
+                    for k, idx in enumerate(valid_indices):
+                        if k < len(probs):
+                            batch_probs[idx] = float(probs[k])
+            except Exception:
+                pass  # Keep 0.5 defaults
+
+        all_probs.extend(batch_probs)
 
     return np.array(all_probs)

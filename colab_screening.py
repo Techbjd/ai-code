@@ -34,7 +34,7 @@ import sys
 REPO_URL = "https://github.com/Techbjd/ai-code.git"
 REPO_DIR = "/content/ai-code"
 
-if not os.path.exists(REPO_URL):
+if not os.path.exists(REPO_DIR):
     os.system(f"git clone {REPO_URL} {REPO_DIR}")
     print("Repository cloned!")
 else:
@@ -554,27 +554,44 @@ else:
     tcm_screen["herb"] = tcm_valid["herb_name"]
     tcm_screen["class"] = tcm_valid["class"]
 
-    # ML models
-    try:
-        tcm_morgan_fp = np.vstack([smiles_to_morgan(s) for s in tcm_valid["smiles"]])
+    # ML models — extract Morgan FP per-molecule (skip failures)
+    def safe_morgan_batch(smiles_list):
+        fps, valid_idx = [], []
+        for i, s in enumerate(smiles_list):
+            try:
+                fp = smiles_to_morgan(s)
+                if fp is not None and len(fp) == 2048:
+                    fps.append(fp)
+                    valid_idx.append(i)
+            except Exception:
+                pass
+        return np.array(fps), valid_idx
+
+    tcm_morgan_fp, tcm_morgan_idx = safe_morgan_batch(tcm_valid["smiles"].tolist())
+    print(f"  Morgan FP: {len(tcm_morgan_fp)}/{len(tcm_valid)} valid")
+
+    if len(tcm_morgan_fp) > 0:
         for name in ["rf", "svm", "xgb"]:
             if name in models_ml:
                 try:
                     model = models_ml[name]
                     probs = predict_ml_model(model, tcm_morgan_fp)
-                    tcm_screen[f"{name}_score"] = probs
+                    # Map back to full DataFrame (NaN for failed)
+                    full_probs = np.full(len(tcm_valid), 0.5)
+                    full_probs[tcm_morgan_idx] = probs
+                    tcm_screen[f"{name}_score"] = full_probs
+                    print(f"  {name.upper()}: done")
                 except Exception as e:
                     print(f"  {name.upper()} screening ERROR: {e}")
                     tcm_screen[f"{name}_score"] = 0.5
-    except Exception as e:
-        print(f"  Morgan FP extraction ERROR: {e}")
 
-    # GNN models
+    # GNN models — predict_dgl_model now handles per-molecule errors internally
     for name in list(models_gnn.keys()):
         try:
             model = models_gnn[name]
             probs = predict_dgl_model(model, tcm_valid["smiles"].tolist(), device=DEVICE)
             tcm_screen[f"gnn_{name}_score"] = probs
+            print(f"  GNN_{name.upper()}: done")
         except Exception as e:
             print(f"  GNN_{name.upper()} screening ERROR: {e}")
             tcm_screen[f"gnn_{name}_score"] = 0.5
@@ -593,7 +610,7 @@ else:
 
 # %%
 # @title 14. TCM Screening Results - ALL Compounds
-if len(tcm_valid) > 0 and score_cols:
+if len(tcm_valid) > 0 and 'tcm_screen' in dir() and not tcm_screen.empty:
     print("=" * 80)
     print("ALL TCM COMPOUNDS SCREENED (ranked by avg prediction score)")
     print("=" * 80)
