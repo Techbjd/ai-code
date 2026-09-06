@@ -2,10 +2,4 @@
 
 __version__ = '1.0.0'
 
-from vegfr2.sklearn_api import GNNClassifier, GNNRegressor, EnsembleClassifier
-
-__all__ = [
-    "GNNClassifier",
-    "GNNRegressor",
-    "EnsembleClassifier",
-]
+__all__ = []

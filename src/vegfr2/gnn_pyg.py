@@ -12,8 +12,13 @@ from typing import Any
 import numpy as np
 import torch
 from torch import Tensor, nn
-from torch_geometric.data import Data
-from torch_geometric.loader import DataLoader
+
+try:
+    from torch_geometric.data import Data
+    from torch_geometric.loader import DataLoader
+    HAS_PYG = True
+except ImportError:
+    HAS_PYG = False
 
 from vegfr2.features import mol_to_graph
 from vegfr2.types import GraphBatch

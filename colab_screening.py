@@ -438,7 +438,75 @@ for m in all_models:
     print(f"  {m:<15} {correct}/{len(screening_results)} correct ({accuracy:.0f}%)")
 
 # %%
-# @title 13. Generate 3D Structures for Top Hit (Cynaroside)
+# @title 13. Screen Free TCM Database (Paper: TCMSP screening)
+print("=" * 80)
+print("SCREENING FREE TCM DATABASE (68 compounds)")
+print("Paper: TCMSP database used for virtual screening")
+print("Using: tcm_monomer_library.csv (free monomers)")
+print("=" * 80)
+
+tcm_lib = pd.read_csv("data/tcm_monomer_library.csv")
+print(f"  TCM compounds: {len(tcm_lib)}")
+
+# Validate SMILES
+from rdkit import Chem
+valid_mask = tcm_lib["canonical_smiles"].apply(lambda s: Chem.MolFromSmiles(s) is not None)
+tcm_valid = tcm_lib[valid_mask].copy().reset_index(drop=True)
+print(f"  Valid SMILES: {len(tcm_valid)}/{len(tcm_lib)}")
+
+# Screen with all models
+tcm_screen = pd.DataFrame()
+tcm_screen["name"] = tcm_valid["molecule_name"]
+tcm_screen["smiles"] = tcm_valid["canonical_smiles"]
+tcm_screen["herb"] = tcm_valid["herb_name"]
+tcm_screen["class"] = tcm_valid["class"]
+
+# ML models
+tcm_morgan_fp = np.vstack([smiles_to_morgan(s) for s in tcm_valid["smiles"]])
+for name in ["rf", "svm", "xgb"]:
+    model = models_ml[name]
+    probs = predict_ml_model(model, tcm_morgan_fp)
+    tcm_screen[f"{name}_score"] = probs
+
+# GNN models
+for name in list(models_gnn.keys()):
+    model = models_gnn[name]
+    probs = predict_dgl_model(model, tcm_valid["smiles"].tolist(), device=DEVICE)
+    tcm_screen[f"gnn_{name}_score"] = probs
+
+# Average score across all models (ensemble ranking)
+score_cols = [c for c in tcm_screen.columns if c.endswith("_score")]
+tcm_screen["avg_score"] = tcm_screen[score_cols].mean(axis=1)
+tcm_screen["n_models_active"] = (tcm_screen[score_cols] > 0.5).sum(axis=1)
+
+# Sort by average score
+tcm_screen = tcm_screen.sort_values("avg_score", ascending=False).reset_index(drop=True)
+
+print(f"\nScreened {len(tcm_screen)} TCM compounds with {len(score_cols)} models")
+
+# %%
+# @title 14. TCM Screening Results - Top Candidates
+print("=" * 80)
+print("TOP 20 TCM CANDIDATES (ranked by avg prediction score)")
+print("=" * 80)
+
+header = f"{'Rank':<5} {'Molecule':<25} {'Class':<15} {'Avg Score':>10} {'Active':>7} {'Source Herb'}"
+print(header)
+print("-" * 95)
+
+for i, row in tcm_screen.head(20).iterrows():
+    print(f"{i+1:<5} {row['name']:<25} {row['class']:<15} {row['avg_score']:>10.4f} {int(row['n_models_active']):>7} {row['herb']}")
+
+# Active predictions (score > 0.5)
+active_count = (tcm_screen["avg_score"] > 0.5).sum()
+print(f"\nCompounds predicted active (avg > 0.5): {active_count}/{len(tcm_screen)}")
+
+# Save full results
+tcm_screen.to_csv("tcm_screening_results.csv", index=False)
+print(f"\nFull results saved: tcm_screening_results.csv")
+
+# %%
+# @title 15. Generate 3D Structure for Top Hit (Cynaroside)
 from rdkit import Chem
 from rdkit.Chem import AllChem
 
@@ -462,7 +530,7 @@ if len(cynaroside_row) > 0:
         print("  Generated: cynaroside_3d.sdf")
 
 # %%
-# @title 14. Summary
+# @title 16. Summary
 print("=" * 80)
 print("PIPELINE COMPLETE (Paper Method)")
 print("=" * 80)
@@ -490,16 +558,16 @@ Paper's top 3 hits (experimentally validated):
   3. Scutellarin (IC50=8349 nM, 81.3% inhibition)
 
 Files generated:
-  - screening_results.csv (full results)
+  - screening_results.csv (paper's 6 molecules)
+  - tcm_screening_results.csv (68 TCM compounds ranked)
   - cynaroside_3d.sdf (3D structure for docking)
-  - tcm_database.csv (paper's 6 molecules)
 
 For full pipeline, follow:
 Hou et al. (2025) J Enzyme Inhib Med Chem, 40:1, 2518192
 """)
 
 # %%
-# @title 15. Run Tests
+# @title 17. Run Tests
 import pytest
 
 print("\nRunning test suite...")

@@ -26,8 +26,13 @@ from typing import Any
 import numpy as np
 import torch
 import torch.nn as nn
-from torch_geometric.data import Data
-from torch_geometric.loader import DataLoader
+
+try:
+    from torch_geometric.data import Data
+    from torch_geometric.loader import DataLoader
+    HAS_PYG = True
+except ImportError:
+    HAS_PYG = False
 
 from vegfr2.features import mol_to_graph, smiles_to_morgan, combine_features
 from vegfr2.metrics import classification_metrics

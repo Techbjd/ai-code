@@ -16,7 +16,12 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from torch_geometric.data import Data
+
+try:
+    from torch_geometric.data import Data
+    HAS_PYG = True
+except ImportError:
+    HAS_PYG = False
 
 
 class GraphOnlyDataset(torch.utils.data.Dataset):
