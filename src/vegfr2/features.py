@@ -12,15 +12,12 @@ from rdkit.Chem import rdFingerprintGenerator
 
 ATOM_SYMBOLS: list[str] = ['C', 'N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I', 'B', 'Si', 'Se']
 SYMBOL_CHOICES: list[str] = ATOM_SYMBOLS[:11] + ['other']
-HYBRIDIZATIONS: list[str] = ['S', 'SP', 'SP2', 'SP3']
-DEGREE_SLOTS: list[int] = list(range(7))
-CHARGE_CHOICES: list[int] = [-1, 0, 1]
-CHIRAL_TAGS: list[str] = [
-    'CHI_UNSPECIFIED',
-    'CHI_TETRAHEDRAL_CW',
-    'CHI_TETRAHEDRAL_CCW',
-    'CHI_OTHER',
-]
+HYBRIDIZATIONS: list[str] = ['SP', 'SP2', 'SP3', 'SP3D', 'SP3D2']
+DEGREE_SLOTS: list[int] = list(range(6))           # 0-5
+IMPLICIT_VALENCE_SLOTS: list[int] = list(range(6))  # 0-5
+CHARGE_CHOICES: list[int] = [-1, 0, 1, 'other']
+NUM_HS_SLOTS: list[int] = list(range(6))            # 0-5
+NUM_RADICAL_SLOTS: list[int] = list(range(4))       # 0-3
 BOND_STEREO: list[str] = [
     'STEREONONE',
     'STEREOANY',
@@ -29,7 +26,7 @@ BOND_STEREO: list[str] = [
     'STEREOCIS',
     'STEREOTRANS',
 ]
-ATOM_FEAT_DIM: int = 32
+ATOM_FEAT_DIM: int = 45  # DGL CanonicalAtomFeaturizer style
 BOND_FEAT_DIM: int = 11
 
 _FP_CACHE: dict[str, dict[str, np.ndarray]] = {}
@@ -61,29 +58,35 @@ def _atom_features(atom: Chem.Atom) -> list[float]:
     symbol = atom.GetSymbol()
     symbol_block = _one_hot(
         symbol if symbol in SYMBOL_CHOICES else 'other', SYMBOL_CHOICES
-    )
-    degree_block = _one_hot(min(atom.GetDegree(), 6), DEGREE_SLOTS)
-    charge = max(-1, min(1, atom.GetFormalCharge()))
-    charge_block = _one_hot(charge, CHARGE_CHOICES)
-    aromatic_block = [int(atom.GetIsAromatic())]
+    )  # 12
+    degree_block = _one_hot(min(atom.GetDegree(), 5), DEGREE_SLOTS)  # 6
+    charge = atom.GetFormalCharge()
+    charge_block = _one_hot(
+        charge if charge in [-1, 0, 1] else 'other', CHARGE_CHOICES
+    )  # 4
+    num_hs = atom.GetTotalNumHs()
+    num_hs_block = _one_hot(min(num_hs, 5), NUM_HS_SLOTS)  # 6
     hybridization = str(atom.GetHybridization())
     hybridization_block = _one_hot(
         hybridization if hybridization in HYBRIDIZATIONS else 'other',
         HYBRIDIZATIONS + ['other'],
-    )
-    chiral_tag = str(atom.GetChiralTag())
-    chiral_block = _one_hot(
-        chiral_tag if chiral_tag in CHIRAL_TAGS else 'CHI_OTHER', CHIRAL_TAGS
-    )
+    )  # 6
+    num_radicals = atom.GetNumRadicalElectrons()
+    radical_block = _one_hot(min(num_radicals, 3), NUM_RADICAL_SLOTS)  # 4
+    implicit_valence = atom.GetImplicitValence()
+    implicit_block = _one_hot(min(implicit_valence, 5), IMPLICIT_VALENCE_SLOTS)  # 6
+    aromatic_block = [int(atom.GetIsAromatic())]  # 1
     features = (
         symbol_block
         + degree_block
         + charge_block
-        + aromatic_block
+        + num_hs_block
         + hybridization_block
-        + chiral_block
+        + radical_block
+        + implicit_block
+        + aromatic_block
     )
-    assert len(features) == ATOM_FEAT_DIM, f'expected {ATOM_FEAT_DIM} atom features'
+    assert len(features) == ATOM_FEAT_DIM, f'expected {ATOM_FEAT_DIM} atom features, got {len(features)}'
     return features
 
 

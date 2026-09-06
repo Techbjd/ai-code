@@ -100,7 +100,8 @@ class GNNClassifier:
         self._fitted = False
 
     def _get_input_dim(self) -> int:
-        return 32  # plain graph atom features
+        from vegfr2.features import ATOM_FEAT_DIM
+        return ATOM_FEAT_DIM
 
     def _build_model(self, in_dim: int) -> nn.Module:
         from vegfr2.gnn_pyg import build_pyg_model
@@ -383,10 +384,11 @@ class GNNRegressor:
         self._fitted = False
 
     def _build_model(self) -> nn.Module:
+        from vegfr2.features import ATOM_FEAT_DIM
         from vegfr2.gnn_pyg import build_pyg_model
         return build_pyg_model(
             self.model_name,
-            in_dim=32,
+            in_dim=ATOM_FEAT_DIM,
             hidden=self.hidden,
             layers=self.layers,
             heads=self.heads,

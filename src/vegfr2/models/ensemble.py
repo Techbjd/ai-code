@@ -85,7 +85,7 @@ class GNNEnsembleClassifier:
         self.ml_model = None
         self._fitted = False
 
-    def _build_gnn(self, in_dim: int = 32, edge_dim: int = 11) -> nn.Module:
+    def _build_gnn(self, in_dim: int = 45, edge_dim: int = 11) -> nn.Module:
         from vegfr2.gnn_pyg import build_pyg_model
         return build_pyg_model(
             self.gnn_name,
@@ -163,7 +163,7 @@ class GNNEnsembleClassifier:
         device = torch.device(device)
         torch.manual_seed(self.seed)
 
-        self.gnn_model = self._build_gnn(in_dim=32).to(device)
+        self.gnn_model = self._build_gnn(in_dim=45).to(device)
         opt = torch.optim.AdamW(self.gnn_model.parameters(), lr=gnn_lr, weight_decay=1e-4)
         loss_fn = nn.BCEWithLogitsLoss()
 
@@ -293,7 +293,7 @@ class GNNEnsembleClassifier:
         )
 
         if state["gnn_state"] is not None:
-            ensemble.gnn_model = ensemble._build_gnn(in_dim=32).to(device)
+            ensemble.gnn_model = ensemble._build_gnn(in_dim=45).to(device)
             ensemble.gnn_model.load_state_dict(state["gnn_state"])
 
         ensemble.ml_model = state["ml_model"]

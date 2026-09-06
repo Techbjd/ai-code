@@ -120,8 +120,9 @@ def test_get_feature_dim_invalid():
 
 def test_extract_gnn_embedding_shape():
     from vegfr2.gnn_models import build_model
+    from vegfr2.features import ATOM_FEAT_DIM
 
-    model = build_model("gcn", in_dim=32, hidden=64, layers=3)
+    model = build_model("gcn", in_dim=ATOM_FEAT_DIM, hidden=64, layers=3)
     embedding = extract_gnn_embedding(model, "CCO", device="cpu")
 
     assert isinstance(embedding, np.ndarray)
@@ -131,8 +132,9 @@ def test_extract_gnn_embedding_shape():
 
 def test_extract_gnn_embedding_deterministic():
     from vegfr2.gnn_models import build_model
+    from vegfr2.features import ATOM_FEAT_DIM
 
-    model = build_model("gcn", in_dim=32, hidden=64, layers=3)
+    model = build_model("gcn", in_dim=ATOM_FEAT_DIM, hidden=64, layers=3)
     emb1 = extract_gnn_embedding(model, "CCO", device="cpu")
     emb2 = extract_gnn_embedding(model, "CCO", device="cpu")
 
@@ -141,8 +143,9 @@ def test_extract_gnn_embedding_deterministic():
 
 def test_extract_gnn_embeddings_batch_shape():
     from vegfr2.gnn_models import build_model
+    from vegfr2.features import ATOM_FEAT_DIM
 
-    model = build_model("gcn", in_dim=32, hidden=64, layers=3)
+    model = build_model("gcn", in_dim=ATOM_FEAT_DIM, hidden=64, layers=3)
     smiles_list = ["CCO", "c1ccccc1", "CC(=O)Oc1ccccc1C(=O)O"]
     embeddings = extract_gnn_embeddings_batch(model, smiles_list, device="cpu")
 
@@ -163,8 +166,9 @@ def test_extract_gnn_embeddings_batch_empty():
 
 def test_combined_features_gnn_morgan():
     from vegfr2.gnn_models import build_model
+    from vegfr2.features import ATOM_FEAT_DIM
 
-    model = build_model("gcn", in_dim=32, hidden=64, layers=3)
+    model = build_model("gcn", in_dim=ATOM_FEAT_DIM, hidden=64, layers=3)
     gnn_emb = extract_gnn_embedding(model, "CCO", device="cpu")
     fp_morgan = smiles_to_morgan("CCO", radius=2, n_bits=2048)
     combined = combine_features(gnn_emb.reshape(1, -1), fp_morgan.reshape(1, -1))

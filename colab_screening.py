@@ -301,7 +301,7 @@ def train_all_gnn():
         val_loader = torch.utils.data.DataLoader(val_ds, batch_size=256, shuffle=False, collate_fn=collate_fn, num_workers=0)
         test_loader = torch.utils.data.DataLoader(test_ds, batch_size=256, shuffle=False, collate_fn=collate_fn, num_workers=0)
 
-        model = build_dgl_model(model_name, in_dim=32, hidden=128, layers=3, heads=8, dropout=0.3).to(device)
+        model = build_dgl_model(model_name, in_dim=45, hidden=128, layers=3, heads=8, dropout=0.3).to(device)
         n_params = sum(p.numel() for p in model.parameters())
         print(f"  Model: {model_name} ({n_params:,} params)")
 

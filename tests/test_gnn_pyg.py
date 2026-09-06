@@ -6,7 +6,7 @@ import pytest
 import torch
 from torch_geometric.loader import DataLoader
 
-from vegfr2.features import mol_to_graph
+from vegfr2.features import ATOM_FEAT_DIM, mol_to_graph
 from vegfr2.gnn_pyg import (
     build_pyg_model,
     PlainPyGDataset,
@@ -26,8 +26,8 @@ def pyg_batch():
 
 @pytest.mark.parametrize("name", ["gcn", "gat", "gatv2", "mpnn"])
 def test_pyg_model_forward(name, pyg_batch):
-    """PyG models produce [B, 1] logits with 32-dim features."""
-    model = build_pyg_model(name, in_dim=32, hidden=32, layers=2, heads=2)
+    """PyG models produce [B, 1] logits with DGL-style atom features."""
+    model = build_pyg_model(name, in_dim=ATOM_FEAT_DIM, hidden=32, layers=2, heads=2)
     model.eval()
 
     with torch.no_grad():
@@ -42,8 +42,8 @@ def test_pyg_model_forward(name, pyg_batch):
 
 @pytest.mark.parametrize("name", ["gcn", "gat", "gatv2", "mpnn"])
 def test_pyg_model_backward(name, pyg_batch):
-    """PyG models have finite gradients with 32-dim features."""
-    model = build_pyg_model(name, in_dim=32, hidden=32, layers=2, heads=2)
+    """PyG models have finite gradients with DGL-style atom features."""
+    model = build_pyg_model(name, in_dim=ATOM_FEAT_DIM, hidden=32, layers=2, heads=2)
     model.train()
 
     if name == "mpnn":
@@ -62,9 +62,9 @@ def test_pyg_model_backward(name, pyg_batch):
 def test_gatv2_vs_gat_different():
     """GATv2 and GAT produce different outputs (different architectures)."""
     torch.manual_seed(42)
-    gat = build_pyg_model("gat", in_dim=32, hidden=32, layers=2, heads=2)
+    gat = build_pyg_model("gat", in_dim=ATOM_FEAT_DIM, hidden=32, layers=2, heads=2)
     torch.manual_seed(42)
-    gatv2 = build_pyg_model("gatv2", in_dim=32, hidden=32, layers=2, heads=2)
+    gatv2 = build_pyg_model("gatv2", in_dim=ATOM_FEAT_DIM, hidden=32, layers=2, heads=2)
 
     dataset = PlainPyGDataset(["CCO", "c1ccccc1"], [1, 0])
     loader = DataLoader(dataset, batch_size=2, shuffle=False)
@@ -86,7 +86,7 @@ def test_build_pyg_model_unknown_raises():
 
 
 def test_build_pyg_model_gatv2():
-    model = build_pyg_model("gatv2", in_dim=32, hidden=128, layers=3, heads=8)
+    model = build_pyg_model("gatv2", in_dim=ATOM_FEAT_DIM, hidden=128, layers=3, heads=8)
     assert model is not None
     param_count = sum(p.numel() for p in model.parameters())
     assert param_count > 10000  # Should have reasonable parameters

@@ -113,7 +113,7 @@ class GAT(nn.Module):
 
 
 class MPNN(nn.Module):
-    def __init__(self, in_dim: int = 32, hidden: int = 64, layers: int = 3, out_dim: int = 1, edge_dim: int = 11, dropout: float = 0.2):
+    def __init__(self, in_dim: int = 45, hidden: int = 64, layers: int = 3, out_dim: int = 1, edge_dim: int = 11, dropout: float = 0.2):
         super().__init__()
         self.init_kwargs = {"in_dim": in_dim, "hidden": hidden, "layers": layers, "out_dim": out_dim, "edge_dim": edge_dim, "dropout": dropout}
         self.input = nn.Linear(in_dim, hidden)
@@ -145,7 +145,7 @@ class MPNN(nn.Module):
 
 def build_model(
     name: str,
-    in_dim: int = 32,
+    in_dim: int = 45,
     hidden: int = 64,
     layers: int = 3,
     heads: int = 4,
@@ -243,7 +243,7 @@ def train_gnn_model(
     else:
         val_loader = None
     
-    model = build_model(name, in_dim=32, hidden=hidden, layers=layers, heads=heads, edge_dim=11).to(device)
+    model = build_model(name, in_dim=45, hidden=hidden, layers=layers, heads=heads, edge_dim=11).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=lr)
     loss_fn = nn.BCEWithLogitsLoss()
     

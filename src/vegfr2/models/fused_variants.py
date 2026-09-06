@@ -203,7 +203,7 @@ class FusedVariant(nn.Module):
     def __init__(
         self,
         gnn_type: str = "gin",
-        in_dim: int = 32,
+        in_dim: int = 45,
         fp_type: Literal["none", "morgan", "maccs", "both"] = "none",
         fp_dim: int = 0,
         hidden: int = 64,

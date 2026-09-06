@@ -39,7 +39,7 @@ class FusedGIN(nn.Module):
     
     def __init__(
         self,
-        in_dim: int = 32,
+        in_dim: int = 45,
         hidden: int = 128,
         layers: int = 3,
         fp_dim: int = 2214,
@@ -165,7 +165,7 @@ class FusedGAT(nn.Module):
     
     def __init__(
         self,
-        in_dim: int = 32,
+        in_dim: int = 45,
         hidden: int = 128,
         layers: int = 3,
         heads: int = 4,

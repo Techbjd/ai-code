@@ -14,7 +14,7 @@ from vegfr2.models.gin import GIN_PyG
 from vegfr2.models.pna import PNA_PyG
 from vegfr2.models.graph_transformer import GraphTransformer_PyG
 from vegfr2.gnn_pyg import build_pyg_model
-from vegfr2.features import mol_to_graph
+from vegfr2.features import mol_to_graph, ATOM_FEAT_DIM
 
 
 # ============================================================
@@ -41,13 +41,13 @@ def _make_batch(smiles_list: list[str] | None = None):
 
 class TestGIN:
     def test_gin_forward(self):
-        gin = GIN_PyG(in_dim=32, hidden=64, layers=3, out_dim=1)
+        gin = GIN_PyG(in_dim=ATOM_FEAT_DIM, hidden=64, layers=3, out_dim=1)
         batch = _make_batch()
         out = gin(batch["node_feats"], batch["edge_index"], batch["node_batch"])
         assert out.shape == (2, 1)
 
     def test_gin_backward(self):
-        gin = GIN_PyG(in_dim=32, hidden=64, layers=2, out_dim=1)
+        gin = GIN_PyG(in_dim=ATOM_FEAT_DIM, hidden=64, layers=2, out_dim=1)
         batch = _make_batch()
         out = gin(batch["node_feats"], batch["edge_index"], batch["node_batch"])
         loss = out.sum()
@@ -55,19 +55,19 @@ class TestGIN:
         assert all(p.grad is not None for p in gin.parameters() if p.requires_grad)
 
     def test_gin_no_jk(self):
-        gin = GIN_PyG(in_dim=32, hidden=64, layers=3, out_dim=1, jk=False)
+        gin = GIN_PyG(in_dim=ATOM_FEAT_DIM, hidden=64, layers=3, out_dim=1, jk=False)
         batch = _make_batch()
         out = gin(batch["node_feats"], batch["edge_index"], batch["node_batch"])
         assert out.shape == (2, 1)
 
     def test_gin_max_pooling(self):
-        gin = GIN_PyG(in_dim=32, hidden=64, layers=2, out_dim=1, pooling="max")
+        gin = GIN_PyG(in_dim=ATOM_FEAT_DIM, hidden=64, layers=2, out_dim=1, pooling="max")
         batch = _make_batch()
         out = gin(batch["node_feats"], batch["edge_index"], batch["node_batch"])
         assert out.shape == (2, 1)
 
     def test_gin_build_via_factory(self):
-        model = build_pyg_model("gin", in_dim=32, hidden=64, layers=3, heads=8, edge_dim=11)
+        model = build_pyg_model("gin", in_dim=ATOM_FEAT_DIM, hidden=64, layers=3, heads=8, edge_dim=11)
         assert isinstance(model, GIN_PyG)
         batch = _make_batch()
         out = model(batch["node_feats"], batch["edge_index"], batch["node_batch"])
@@ -80,13 +80,13 @@ class TestGIN:
 
 class TestPNA:
     def test_pna_forward(self):
-        pna = PNA_PyG(in_dim=32, hidden=64, layers=3, out_dim=1)
+        pna = PNA_PyG(in_dim=ATOM_FEAT_DIM, hidden=64, layers=3, out_dim=1)
         batch = _make_batch()
         out = pna(batch["node_feats"], batch["edge_index"], batch["node_batch"])
         assert out.shape == (2, 1)
 
     def test_pna_backward(self):
-        pna = PNA_PyG(in_dim=32, hidden=64, layers=2, out_dim=1)
+        pna = PNA_PyG(in_dim=ATOM_FEAT_DIM, hidden=64, layers=2, out_dim=1)
         batch = _make_batch()
         out = pna(batch["node_feats"], batch["edge_index"], batch["node_batch"])
         loss = out.sum()
@@ -94,7 +94,7 @@ class TestPNA:
         assert all(p.grad is not None for p in pna.parameters() if p.requires_grad)
 
     def test_pna_build_via_factory(self):
-        model = build_pyg_model("pna", in_dim=32, hidden=64, layers=3, heads=8, edge_dim=11)
+        model = build_pyg_model("pna", in_dim=ATOM_FEAT_DIM, hidden=64, layers=3, heads=8, edge_dim=11)
         assert isinstance(model, PNA_PyG)
         batch = _make_batch()
         out = model(batch["node_feats"], batch["edge_index"], batch["node_batch"])
@@ -107,13 +107,13 @@ class TestPNA:
 
 class TestGraphTransformer:
     def test_transformer_forward(self):
-        gt = GraphTransformer_PyG(in_dim=32, hidden=64, layers=2, heads=8, out_dim=1, edge_dim=11)
+        gt = GraphTransformer_PyG(in_dim=ATOM_FEAT_DIM, hidden=64, layers=2, heads=8, out_dim=1, edge_dim=11)
         batch = _make_batch()
         out = gt(batch["node_feats"], batch["edge_index"], batch["node_batch"], batch["edge_feats"])
         assert out.shape == (2, 1)
 
     def test_transformer_backward(self):
-        gt = GraphTransformer_PyG(in_dim=32, hidden=64, layers=2, heads=4, out_dim=1, edge_dim=11)
+        gt = GraphTransformer_PyG(in_dim=ATOM_FEAT_DIM, hidden=64, layers=2, heads=4, out_dim=1, edge_dim=11)
         batch = _make_batch()
         out = gt(batch["node_feats"], batch["edge_index"], batch["node_batch"], batch["edge_feats"])
         loss = out.sum()
@@ -121,13 +121,13 @@ class TestGraphTransformer:
         assert all(p.grad is not None for p in gt.parameters() if p.requires_grad)
 
     def test_transformer_single_layer(self):
-        gt = GraphTransformer_PyG(in_dim=32, hidden=64, layers=1, heads=4, out_dim=1, edge_dim=11)
+        gt = GraphTransformer_PyG(in_dim=ATOM_FEAT_DIM, hidden=64, layers=1, heads=4, out_dim=1, edge_dim=11)
         batch = _make_batch()
         out = gt(batch["node_feats"], batch["edge_index"], batch["node_batch"], batch["edge_feats"])
         assert out.shape == (2, 1)
 
     def test_transformer_build_via_factory(self):
-        model = build_pyg_model("graph_transformer", in_dim=32, hidden=64, layers=2, heads=8, edge_dim=11)
+        model = build_pyg_model("graph_transformer", in_dim=ATOM_FEAT_DIM, hidden=64, layers=2, heads=8, edge_dim=11)
         assert isinstance(model, GraphTransformer_PyG)
         batch = _make_batch()
         out = model(batch["node_feats"], batch["edge_index"], batch["node_batch"], batch["edge_feats"])
@@ -202,14 +202,14 @@ class TestEnsembleClassifier:
 class TestModelSize:
     @pytest.mark.parametrize("name", ["gcn", "gat", "gatv2", "mpnn", "gin", "pna", "graph_transformer"])
     def test_model_has_parameters(self, name: str):
-        model = build_pyg_model(name, in_dim=32, hidden=64, layers=3, heads=8, edge_dim=11)
+        model = build_pyg_model(name, in_dim=ATOM_FEAT_DIM, hidden=64, layers=3, heads=8, edge_dim=11)
         n_params = sum(p.numel() for p in model.parameters())
         assert n_params > 0
         assert n_params < 100_000_000  # sanity check: not too large
 
     def test_gin_has_more_params_than_gcn(self):
-        gcn = build_pyg_model("gcn", in_dim=32, hidden=64, layers=3)
-        gin = build_pyg_model("gin", in_dim=32, hidden=64, layers=3)
+        gcn = build_pyg_model("gcn", in_dim=ATOM_FEAT_DIM, hidden=64, layers=3)
+        gin = build_pyg_model("gin", in_dim=ATOM_FEAT_DIM, hidden=64, layers=3)
         gcn_params = sum(p.numel() for p in gcn.parameters())
         gin_params = sum(p.numel() for p in gin.parameters())
         assert gin_params > gcn_params  # GIN uses MLPs, should be larger

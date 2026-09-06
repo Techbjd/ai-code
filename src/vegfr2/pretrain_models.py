@@ -233,7 +233,7 @@ class MaskedAtomGNN(nn.Module):
         self,
         gnn: nn.Module,
         hidden_dim: int = 128,
-        atom_feat_dim: int = 32,
+        atom_feat_dim: int = 45,
         mask_rate: float = 0.15,
     ):
         super().__init__()

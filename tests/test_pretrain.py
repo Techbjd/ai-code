@@ -94,7 +94,7 @@ class TestGraphAugmentor:
 class TestContrastiveGNN:
     def test_encode_shape(self):
         from vegfr2.gnn_pyg import build_pyg_model
-        base_gnn = build_pyg_model("gcn", in_dim=32, hidden=64, layers=2, out_dim=64)
+        base_gnn = build_pyg_model("gcn", in_dim=ATOM_FEAT_DIM, hidden=64, layers=2, out_dim=64)
         model = ContrastiveGNN(base_gnn, hidden_dim=64, projection_dim=32)
 
         batch = _make_simple_batch()
@@ -106,7 +106,7 @@ class TestContrastiveGNN:
 
     def test_contrastive_loss(self):
         from vegfr2.gnn_pyg import build_pyg_model
-        base_gnn = build_pyg_model("gcn", in_dim=32, hidden=64, layers=2, out_dim=64)
+        base_gnn = build_pyg_model("gcn", in_dim=ATOM_FEAT_DIM, hidden=64, layers=2, out_dim=64)
         model = ContrastiveGNN(base_gnn, hidden_dim=64, projection_dim=32)
 
         z1 = torch.randn(4, 32)
@@ -120,7 +120,7 @@ class TestContrastiveGNN:
 
     def test_forward_shape(self):
         from vegfr2.gnn_pyg import build_pyg_model
-        base_gnn = build_pyg_model("gcn", in_dim=32, hidden=64, layers=2, out_dim=64)
+        base_gnn = build_pyg_model("gcn", in_dim=ATOM_FEAT_DIM, hidden=64, layers=2, out_dim=64)
         model = ContrastiveGNN(base_gnn, hidden_dim=64, projection_dim=32)
 
         batch = _make_simple_batch()
@@ -131,8 +131,8 @@ class TestContrastiveGNN:
 class TestMaskedAtomGNN:
     def test_create_mask(self):
         from vegfr2.gnn_pyg import build_pyg_model
-        base_gnn = build_pyg_model("gcn", in_dim=32, hidden=64, layers=2, out_dim=64)
-        model = MaskedAtomGNN(base_gnn, hidden_dim=64, atom_feat_dim=32, mask_rate=0.3)
+        base_gnn = build_pyg_model("gcn", in_dim=ATOM_FEAT_DIM, hidden=64, layers=2, out_dim=64)
+        model = MaskedAtomGNN(base_gnn, hidden_dim=64, atom_feat_dim=ATOM_FEAT_DIM, mask_rate=0.3)
 
         x = torch.randn(10, 32)
         masked_x, mask = model.create_mask(x, mask_rate=0.3)
@@ -144,8 +144,8 @@ class TestMaskedAtomGNN:
 
     def test_masked_prediction_loss(self):
         from vegfr2.gnn_pyg import build_pyg_model
-        base_gnn = build_pyg_model("gcn", in_dim=32, hidden=64, layers=2, out_dim=64)
-        model = MaskedAtomGNN(base_gnn, hidden_dim=64, atom_feat_dim=32, mask_rate=0.3)
+        base_gnn = build_pyg_model("gcn", in_dim=ATOM_FEAT_DIM, hidden=64, layers=2, out_dim=64)
+        model = MaskedAtomGNN(base_gnn, hidden_dim=64, atom_feat_dim=ATOM_FEAT_DIM, mask_rate=0.3)
 
         batch = _make_simple_batch()
         x = batch.x
@@ -156,8 +156,8 @@ class TestMaskedAtomGNN:
 
     def test_forward_shape(self):
         from vegfr2.gnn_pyg import build_pyg_model
-        base_gnn = build_pyg_model("gcn", in_dim=32, hidden=64, layers=2, out_dim=64)
-        model = MaskedAtomGNN(base_gnn, hidden_dim=64, atom_feat_dim=32)
+        base_gnn = build_pyg_model("gcn", in_dim=ATOM_FEAT_DIM, hidden=64, layers=2, out_dim=64)
+        model = MaskedAtomGNN(base_gnn, hidden_dim=64, atom_feat_dim=ATOM_FEAT_DIM)
 
         batch = _make_simple_batch()
         out = model(batch.x, batch.edge_index, batch.batch)
