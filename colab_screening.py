@@ -162,13 +162,12 @@ print("=" * 80)
 
 RAW_CSV = "data/raw/chembl_vegfr2.csv"
 
+# Load processed splits directly (raw CSV may not exist in git)
 try:
-    print(f"Loading data from {RAW_CSV}...")
-    print("Paper: ChEMBL279 VEGFR2, IC50 < 500 nM = active")
-
-    df = load_csv(RAW_CSV)
-    df = preprocess(df)
-    train_df, val_df, test_df = split(df, seed=42)
+    train_df = pd.read_csv("data/processed/train.csv")
+    val_df = pd.read_csv("data/processed/val.csv")
+    test_df = pd.read_csv("data/processed/test.csv")
+    df = pd.concat([train_df, val_df, test_df], ignore_index=True)
 
     print(f"\nDataset Statistics (paper: ~5564 compounds):")
     print(f"  Total molecules: {len(df)}")
@@ -176,20 +175,16 @@ try:
     print(f"  Val:   {len(val_df)} ({val_df['active'].mean():.1%} active)")
     print(f"  Test:  {len(test_df)} ({test_df['active'].mean():.1%} active)")
 except Exception as e:
-    print(f"ERROR loading data: {e}")
-    print("Attempting to load raw CSV directly...")
-    df = pd.read_csv(RAW_CSV)
-    if "smiles" not in df.columns:
-        for col in df.columns:
-            if "smi" in col.lower():
-                df = df.rename(columns={col: "smiles"})
-                break
-    df = df.dropna(subset=["smiles"])
-    df["active"] = (df.get("pchembl_value", df.get("IC50", 500)) > 7).astype(int)
-    from sklearn.model_selection import train_test_split
-    train_df, temp_df = train_test_split(df, test_size=0.2, random_state=42, stratify=df["active"])
-    val_df, test_df = train_test_split(temp_df, test_size=0.5, random_state=42, stratify=temp_df["active"])
-    print(f"  Fallback loaded: {len(df)} compounds")
+    print(f"ERROR loading processed splits: {e}")
+    print("Attempting raw CSV fallback...")
+    try:
+        df = load_csv(RAW_CSV)
+        df = preprocess(df)
+        train_df, val_df, test_df = split(df, seed=42)
+        print(f"  Fallback loaded: {len(df)} compounds")
+    except Exception as e2:
+        print(f"ERROR: {e2}")
+        raise RuntimeError("No data available!")
 
 # Validate SMILES in all splits
 print("\nValidating SMILES...")
