@@ -643,7 +643,7 @@ else:
                 pass
         return np.array(fps), valid_idx
 
-    tcm_morgan_fp, tcm_morgan_idx = safe_morgan_batch(tcm_valid["smiles"].tolist())
+    tcm_morgan_fp, tcm_morgan_idx = safe_morgan_batch(tcm_valid["canonical_smiles"].tolist())
     print(f"  Morgan FP: {len(tcm_morgan_fp)}/{len(tcm_valid)} valid")
 
     if len(tcm_morgan_fp) > 0:
@@ -665,7 +665,7 @@ else:
     for name in list(models_gnn.keys()):
         try:
             model = models_gnn[name]
-            probs = predict_dgl_model(model, tcm_valid["smiles"].tolist(), device=DEVICE)
+            probs = predict_dgl_model(model, tcm_valid["canonical_smiles"].tolist(), device=DEVICE)
             tcm_screen[f"gnn_{name}_score"] = probs
             print(f"  GNN_{name.upper()}: done")
         except Exception as e:
