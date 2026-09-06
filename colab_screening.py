@@ -22,7 +22,7 @@ How to use:
 # %%
 # @title 1. Install Dependencies
 import os
-import shutil
+import sys
 
 print("Installing packages...")
 %pip install -q rdkit torch xgboost scikit-learn pandas numpy requests
@@ -32,27 +32,40 @@ print("All packages ready!")
 # %%
 # @title 2. Clean + Clone Repository
 import sys
+import subprocess
 
 REPO_URL = "https://github.com/Techbjd/ai-code.git"
 REPO_DIR = "/content/ai-code"
 
-# Remove old repo + any cached Python bytecode
+# Remove old repo
 if os.path.exists(REPO_DIR):
     print("Removing old repo...")
-    shutil.rmtree(REPO_DIR, ignore_errors=True)
-
-# Also clean any stale pycache in content
-for d in os.listdir("/content"):
-    full = os.path.join("/content", d)
-    if d.endswith("__pycache__") or d.endswith(".pyc"):
-        shutil.rmtree(full, ignore_errors=True)
+    subprocess.run(["rm", "-rf", REPO_DIR], check=False)
 
 print("Cloning fresh repo...")
-exit_code = os.system(f"git clone {REPO_URL} {REPO_DIR}")
-if exit_code != 0:
-    print(f"WARNING: git clone failed (exit {exit_code}). Check your network.")
+result = subprocess.run(
+    ["git", "clone", "--depth", "1", REPO_URL, REPO_DIR],
+    capture_output=True, text=True
+)
+if result.returncode != 0:
+    print(f"Clone failed: {result.stderr.strip()}")
+    print("Trying again...")
+    result = subprocess.run(
+        ["git", "clone", "--depth", "1", REPO_URL, REPO_DIR],
+        capture_output=True, text=True
+    )
+if result.returncode != 0:
+    print(f"Clone failed again: {result.stderr.strip()}")
+    print("Using existing repo if available...")
+    if not os.path.exists(REPO_DIR):
+        raise RuntimeError("Cannot clone repo. Check network connection.")
 else:
     print("Repository cloned!")
+
+if os.path.exists(os.path.join(REPO_DIR, ".git")):
+    print("Repo verified!")
+else:
+    print("WARNING: Repo may be incomplete")
 
 sys.path.insert(0, os.path.join(REPO_DIR, "src"))
 os.chdir(REPO_DIR)
@@ -62,12 +75,18 @@ print(f"Working directory: {os.getcwd()}")
 required = ["src/vegfr2/__init__.py", "src/vegfr2/data.py", "src/vegfr2/gnn_dgl.py",
             "src/vegfr2/sklearn_api.py", "data/raw/chembl_vegfr2.csv",
             "data/tcm_monomer_library.csv"]
+all_ok = True
 for f in required:
     path = os.path.join(REPO_DIR, f)
     if not os.path.exists(path):
         print(f"  MISSING: {f}")
+        all_ok = False
     else:
         print(f"  OK: {f}")
+
+if not all_ok:
+    print("\nWARNING: Some files missing. Trying git pull...")
+    subprocess.run(["git", "pull"], cwd=REPO_DIR, check=False)
 
 # Clear any cached vegfr2 modules from previous runs
 for mod_name in list(sys.modules.keys()):
