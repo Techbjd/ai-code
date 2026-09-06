@@ -7,7 +7,7 @@ DOI: 10.1080/14756366.2025.2518192
 
 Paper's exact method:
 1. 6 models: RF+Morgan, SVM+Morgan, XGB+Morgan, GCN, GAT, MPNN
-2. GNN: plain graphs (32-dim atom features, NO fingerprints) via pure PyTorch
+2. GNN: plain graphs (74-dim atom features, NO fingerprints) via pure PyTorch
 3. ML: Morgan fingerprints ONLY (2048-bit, radius=2, NO MACCS)
 4. Compare 6 models head-to-head → select single best
 5. Screen paper's 6 molecules + 2,152 TCM compounds
@@ -258,7 +258,7 @@ import threading
 print("=" * 80)
 print("TRAINING 6 MODELS (Paper's exact method)")
 print("ML (CPU): RF+Morgan, SVM+Morgan, XGB+Morgan")
-print("GNN (GPU): GCN, GAT, MPNN (pure PyTorch, plain graphs, 32-dim)")
+print("GNN (GPU): GCN, GAT, MPNN (pure PyTorch, plain graphs, 74-dim)")
 print("=" * 80)
 
 results = {}
@@ -453,7 +453,7 @@ print(f"  MCC = {best_mcc:.4f}")
 if best_name.startswith("gnn_"):
     best_model = models_gnn[best_name.replace("gnn_", "")]
     best_type = "gnn"
-    print(f"  Type: GNN (plain graph, 32-dim)")
+    print(f"  Type: GNN (plain graph, 74-dim)")
 else:
     best_model = models_ml[best_name]
     best_type = "ml"
@@ -765,7 +765,7 @@ SUMMARY (Hou et al. 2025 reproduction):
 1. Data: ChEMBL279 VEGFR2, {len(df)} compounds
 2. Split: Stratified 8:1:1 (train/val/test), seed=42
 3. Models trained: {len(results)}/6 (ML: {len(models_ml)}, GNN: {len(models_gnn)})
-4. GNN: plain graphs (32-dim) via pure PyTorch
+4. GNN: plain graphs (74-dim) via pure PyTorch
 5. ML: Morgan fingerprints (r=2, 2048-bit)
 6. TCM screening: {len(tcm_valid) if len(tcm_valid) > 0 else 0} compounds
 
