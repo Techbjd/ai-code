@@ -275,7 +275,7 @@ sys.path.insert(0, os.path.join(REPO_DIR, "src"))
 from vegfr2.features import mol_to_graph
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
-from multiprocessing import Pool, cpu_count
+from multiprocessing import cpu_count
 import time
 
 print("Building molecular graphs: [atom(32) + bond(11)] = 32-dim node features")
@@ -294,25 +294,22 @@ def _build_graph(args):
         return None
 
 def make_loader(df, batch_size=256, shuffle=False):
-    """Create DataLoader with parallel graph building."""
+    """Create DataLoader with sequential graph building."""
     t0 = time.time()
     inputs = list(zip(df["canonical_smiles"], df["active"].astype(int).tolist()))
 
-    n_workers = min(cpu_count(), 4)
-    with Pool(n_workers) as pool:
-        results = pool.map(_build_graph, inputs)
+    results = [_build_graph(x) for x in inputs]
 
     data_list = [r for r in results if r is not None]
     elapsed = time.time() - t0
-    print(f"  Built {len(data_list)}/{len(df)} graphs in {elapsed:.1f}s ({n_workers} workers)")
+    print(f"  Built {len(data_list)}/{len(df)} graphs in {elapsed:.1f}s")
 
     return DataLoader(
         data_list,
         batch_size=batch_size,
         shuffle=shuffle,
-        num_workers=2,
+        num_workers=0,
         pin_memory=True,
-        persistent_workers=True,
     )
 
 print(f"Building train graphs...")
