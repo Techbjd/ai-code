@@ -35,6 +35,7 @@ import sys
 import subprocess
 
 REPO_URL = "https://github.com/Techbjd/ai-code.git"
+REPO_BRANCH = "restructured-pipeline"
 REPO_DIR = "/content/ai-code"
 
 # Always work from /content (safe, never deleted)
@@ -45,16 +46,16 @@ if os.path.exists(REPO_DIR):
     print("Removing old repo...")
     subprocess.run(["rm", "-rf", REPO_DIR], check=False)
 
-print("Cloning fresh repo...")
+print(f"Cloning branch '{REPO_BRANCH}'...")
 result = subprocess.run(
-    ["git", "clone", "--depth", "1", REPO_URL, REPO_DIR],
+    ["git", "clone", "--depth", "1", "-b", REPO_BRANCH, REPO_URL, REPO_DIR],
     capture_output=True, text=True
 )
 if result.returncode != 0:
     print(f"Clone failed, retrying...")
     import time; time.sleep(2)
     result = subprocess.run(
-        ["git", "clone", "--depth", "1", REPO_URL, REPO_DIR],
+        ["git", "clone", "--depth", "1", "-b", REPO_BRANCH, REPO_URL, REPO_DIR],
         capture_output=True, text=True
     )
 if result.returncode != 0 or not os.path.exists(REPO_DIR):
@@ -88,6 +89,51 @@ for mod_name in list(sys.modules.keys()):
         del sys.modules[mod_name]
 print("\nCleared cached modules.")
 
+# Direct import helper — bypasses vegfr2 package (which triggers torch_geometric)
+import importlib.util
+
+def _direct_import(filename, module_name, package_name=None):
+    """Import a single .py file directly, bypassing package __init__.
+    If package_name is set, also registers in sys.modules so
+    'from pkg import func' works inside other directly-loaded files."""
+    filepath = os.path.join(REPO_DIR, "src/vegfr2", filename)
+    spec = importlib.util.spec_from_file_location(module_name, filepath)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = mod
+    if package_name:
+        sys.modules[package_name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+# Load modules — register both short name AND package name
+# so that gnn_dgl.py's "from vegfr2.features import X" resolves to our cached copy
+_mod_data = _direct_import("data.py", "vegfr2_data", "vegfr2.data")
+_mod_features = _direct_import("features.py", "vegfr2_features", "vegfr2.features")
+_mod_metrics = _direct_import("metrics.py", "vegfr2_metrics", "vegfr2.metrics")
+_mod_ml = _direct_import("ml_models.py", "vegfr2_ml", "vegfr2.ml_models")
+_mod_gnn = _direct_import("gnn_dgl.py", "vegfr2_gnn", "vegfr2.gnn_dgl")
+
+# Also register the vegfr2 package itself so "from vegfr2.xxx import yyy" doesn't fail
+import types
+_vegfr2_pkg = types.ModuleType("vegfr2")
+_vegfr2_pkg.__path__ = [os.path.join(REPO_DIR, "src/vegfr2")]
+sys.modules["vegfr2"] = _vegfr2_pkg
+
+# Re-export what we need
+load_csv = _mod_data.load_csv
+preprocess = _mod_data.preprocess
+split = _mod_data.split
+smiles_to_morgan = _mod_features.smiles_to_morgan
+train_ml_model = _mod_ml.train_ml_model
+predict_ml_model = _mod_ml.predict_ml_model
+classification_metrics = _mod_metrics.classification_metrics
+MolDataset = _mod_gnn.MolDataset
+collate_fn = _mod_gnn.collate_fn
+build_dgl_model = _mod_gnn.build_dgl_model
+predict_dgl_model = _mod_gnn.predict_dgl_model
+
+print("All modules loaded (bypassed torch_geometric).")
+
 # %%
 # @title 3. Check GPU
 import torch
@@ -114,9 +160,9 @@ print("=" * 80)
 print("LOADING AND VALIDATING DATA")
 print("=" * 80)
 
+RAW_CSV = "data/raw/chembl_vegfr2.csv"
+
 try:
-    from vegfr2.data import load_csv, preprocess, split
-    RAW_CSV = "data/raw/chembl_vegfr2.csv"
     print(f"Loading data from {RAW_CSV}...")
     print("Paper: ChEMBL279 VEGFR2, IC50 < 500 nM = active")
 
@@ -168,8 +214,6 @@ print(f"\nFinal: train={len(train_df)}, val={len(val_df)}, test={len(test_df)}")
 print("=" * 80)
 print("EXTRACTING MORGAN FINGERPRINTS")
 print("=" * 80)
-
-from vegfr2.features import smiles_to_morgan
 
 def safe_morgan(smiles):
     """Extract Morgan FP with error handling."""
@@ -230,8 +274,6 @@ train_errors = []
 
 def train_all_ml():
     """Train 3 ML models on Morgan fingerprints (CPU)."""
-    from vegfr2.ml_models import train_ml_model, predict_ml_model
-    from vegfr2.metrics import classification_metrics
 
     for name in ["rf", "svm", "xgb"]:
         print(f"\n--- Training {name.upper()} + Morgan ---")
@@ -252,8 +294,6 @@ def train_all_ml():
 def train_all_gnn():
     """Train 3 GNN models on plain graphs (GPU, pure PyTorch)."""
     import torch.nn as nn
-    from vegfr2.gnn_dgl import MolDataset, collate_fn, build_dgl_model, predict_dgl_model
-    from vegfr2.metrics import classification_metrics
 
     def train_gnn(model_name, train_df, val_df, test_df, device, epochs=100, patience=15):
         torch.manual_seed(42)
@@ -478,7 +518,6 @@ if "inhibition" in tcm_df.columns:
     screening_results["inhibition"] = tcm_df["inhibition"].values
 
 # Screen with ML models
-from vegfr2.ml_models import predict_ml_model
 
 try:
     tcm_morgan = np.vstack([smiles_to_morgan(s) for s in tcm_df["smiles"]])
@@ -496,7 +535,6 @@ except Exception as e:
     print(f"  ML screening ERROR: {e}")
 
 # Screen with GNN models
-from vegfr2.gnn_dgl import predict_dgl_model
 
 for name in list(models_gnn.keys()):
     try:
