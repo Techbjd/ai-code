@@ -7,7 +7,7 @@ DOI: 10.1080/14756366.2025.2518192
 
 Paper's exact method:
 1. 6 models: RF+Morgan, SVM+Morgan, XGB+Morgan, GCN, GAT, MPNN
-2. GNN: plain graphs (32-dim atom features, NO fingerprints) via DGL
+2. GNN: plain graphs (32-dim atom features, NO fingerprints) via pure PyTorch
 3. ML: Morgan fingerprints ONLY (2048-bit, radius=2, NO MACCS)
 4. Compare 6 models head-to-head → select single best
 5. Screen paper's 6 molecules with all models
@@ -22,7 +22,7 @@ How to use:
 # %%
 # @title 1. Install Dependencies
 print("Installing packages...")
-%pip install -q rdkit dgl torch xgboost scikit-learn pandas numpy requests
+%pip install -q rdkit torch xgboost scikit-learn pandas numpy requests
 
 print("All packages ready!")
 
@@ -104,7 +104,7 @@ import threading
 print("=" * 80)
 print("TRAINING 6 MODELS (Paper's exact method)")
 print("ML (CPU): RF+Morgan, SVM+Morgan, XGB+Morgan")
-print("GNN (GPU): GCN, GAT, MPNN (DGL, plain graphs, 32-dim)")
+print("GNN (GPU): GCN, GAT, MPNN (pure PyTorch, plain graphs, 32-dim)")
 print("=" * 80)
 
 results = {}
@@ -130,29 +130,29 @@ def train_all_ml():
 
 
 def train_all_gnn():
-    """Train 3 GNN models on plain graphs using DGL (GPU).
+    """Train 3 GNN models on plain graphs (GPU, pure PyTorch).
 
-    Paper: Hou et al. (2025) used DGL library for molecular graph construction
-    and GNN training. Models: GCN, GAT, MPNN.
+    Paper: Hou et al. (2025) used DGL for GCN, GAT, MPNN.
+    This implements the same architectures with pure PyTorch (no DGL/PyG).
     """
     import torch.nn as nn
-    from vegfr2.gnn_dgl import DGLMolDataset, collate_dgl, build_dgl_model
+    from vegfr2.gnn_dgl import MolDataset, collate_fn, build_dgl_model, predict_dgl_model
     from vegfr2.metrics import classification_metrics
 
     def train_gnn(model_name, train_df, val_df, test_df, device, epochs=100, patience=15):
         torch.manual_seed(42)
 
-        train_ds = DGLMolDataset(train_df["smiles"].tolist(), train_df["active"].astype(int).tolist())
-        val_ds = DGLMolDataset(val_df["smiles"].tolist(), val_df["active"].astype(int).tolist())
-        test_ds = DGLMolDataset(test_df["smiles"].tolist(), test_df["active"].astype(int).tolist())
+        train_ds = MolDataset(train_df["smiles"].tolist(), train_df["active"].astype(int).tolist())
+        val_ds = MolDataset(val_df["smiles"].tolist(), val_df["active"].astype(int).tolist())
+        test_ds = MolDataset(test_df["smiles"].tolist(), test_df["active"].astype(int).tolist())
 
-        train_loader = torch.utils.data.DataLoader(train_ds, batch_size=128, shuffle=True, collate_fn=collate_dgl)
-        val_loader = torch.utils.data.DataLoader(val_ds, batch_size=256, shuffle=False, collate_fn=collate_dgl)
-        test_loader = torch.utils.data.DataLoader(test_ds, batch_size=256, shuffle=False, collate_fn=collate_dgl)
+        train_loader = torch.utils.data.DataLoader(train_ds, batch_size=128, shuffle=True, collate_fn=collate_fn)
+        val_loader = torch.utils.data.DataLoader(val_ds, batch_size=256, shuffle=False, collate_fn=collate_fn)
+        test_loader = torch.utils.data.DataLoader(test_ds, batch_size=256, shuffle=False, collate_fn=collate_fn)
 
         model = build_dgl_model(model_name, in_dim=32, hidden=128, layers=3, heads=8, dropout=0.3).to(device)
         n_params = sum(p.numel() for p in model.parameters())
-        print(f"  Model: {model_name} ({n_params:,} params) - DGL PLAIN GRAPH (32-dim)")
+        print(f"  Model: {model_name} ({n_params:,} params) - Pure PyTorch GNN (32-dim)")
 
         opt = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs, eta_min=1e-6)
@@ -168,11 +168,12 @@ def train_all_gnn():
 
         for epoch in range(1, epochs + 1):
             model.train()
-            for batch_graph, batch_labels in train_loader:
-                batch_graph = batch_graph.to(device)
+            for g_batch, batch_labels in train_loader:
+                if g_batch is None:
+                    continue
+                g_batch = g_batch.to(device)
                 batch_labels = batch_labels.to(device)
-                x = batch_graph.ndata["feat"]
-                logits = model(batch_graph, x)
+                logits = model(g_batch, g_batch.x)
                 loss = loss_fn(logits.squeeze(), batch_labels.squeeze())
                 opt.zero_grad()
                 loss.backward()
@@ -182,10 +183,11 @@ def train_all_gnn():
             model.eval()
             val_probs, val_true = [], []
             with torch.no_grad():
-                for batch_graph, batch_labels in val_loader:
-                    batch_graph = batch_graph.to(device)
-                    x = batch_graph.ndata["feat"]
-                    logits = model(batch_graph, x)
+                for g_batch, batch_labels in val_loader:
+                    if g_batch is None:
+                        continue
+                    g_batch = g_batch.to(device)
+                    logits = model(g_batch, g_batch.x)
                     val_probs.extend(torch.sigmoid(logits).squeeze().cpu().numpy())
                     val_true.extend(batch_labels.squeeze().numpy().astype(int))
 
@@ -210,10 +212,11 @@ def train_all_gnn():
 
         test_probs, test_true = [], []
         with torch.no_grad():
-            for batch_graph, batch_labels in test_loader:
-                batch_graph = batch_graph.to(device)
-                x = batch_graph.ndata["feat"]
-                logits = model(batch_graph, x)
+            for g_batch, batch_labels in test_loader:
+                if g_batch is None:
+                    continue
+                g_batch = g_batch.to(device)
+                logits = model(g_batch, g_batch.x)
                 test_probs.extend(torch.sigmoid(logits).squeeze().cpu().numpy())
                 test_true.extend(batch_labels.squeeze().numpy().astype(int))
 
@@ -222,7 +225,7 @@ def train_all_gnn():
     gnn_names = ["gcn", "gat", "mpnn"]
 
     for name in gnn_names:
-        print(f"\n--- Training GNN_{name.upper()} (DGL PLAIN GRAPH 32-dim) ---")
+        print(f"\n--- Training GNN_{name.upper()} (Pure PyTorch GNN 32-dim) ---")
         try:
             metrics, model = train_gnn(name, train_df, val_df, test_df, DEVICE, epochs=100, patience=15)
             results[f"gnn_{name}"] = metrics
@@ -233,7 +236,7 @@ def train_all_gnn():
         except Exception as e:
             print(f"  ERROR: {e}")
 
-    print("\n✅ All GNN models trained (GPU, DGL, plain graphs)")
+    print("\n✅ All GNN models trained (GPU, pure PyTorch)")
 
 
 # Launch ML and GNN training in PARALLEL
@@ -470,7 +473,7 @@ SUMMARY (Hou et al. 2025 reproduction):
 1. Data: ChEMBL279 VEGFR2, {len(df)} compounds
 2. Split: Stratified 8:1:1 (train/val/test), seed=42
 3. Models: RF+Morgan, SVM+Morgan, XGB+Morgan, GCN, GAT, MPNN
-4. GNN: plain graphs (32-dim atom features) via DGL library
+4. GNN: plain graphs (32-dim atom features) via pure PyTorch (matching paper's DGL architectures)
 5. ML: Morgan fingerprints (r=2, 2048-bit)
 
 Paper's 6 molecules validated:
