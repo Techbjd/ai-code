@@ -485,17 +485,38 @@ tcm_screen = tcm_screen.sort_values("avg_score", ascending=False).reset_index(dr
 print(f"\nScreened {len(tcm_screen)} TCM compounds with {len(score_cols)} models")
 
 # %%
-# @title 14. TCM Screening Results - Top Candidates
+# @title 14. TCM Screening Results - ALL Compounds
 print("=" * 80)
-print("TOP 20 TCM CANDIDATES (ranked by avg prediction score)")
+print("ALL TCM COMPOUNDS SCREENED (ranked by avg prediction score)")
 print("=" * 80)
 
-header = f"{'Rank':<5} {'Molecule':<25} {'Class':<15} {'Avg Score':>10} {'Active':>7} {'Source Herb'}"
+header = f"{'Rank':<5} {'Molecule':<25} {'Class':<15} {'Avg':>7} {'RF':>6} {'SVM':>6} {'XGB':>6} {'GCN':>6} {'GAT':>6} {'MPNN':>6} {'#Act':>5} {'Source Herb'}"
 print(header)
-print("-" * 95)
+print("-" * 125)
 
-for i, row in tcm_screen.head(20).iterrows():
-    print(f"{i+1:<5} {row['name']:<25} {row['class']:<15} {row['avg_score']:>10.4f} {int(row['n_models_active']):>7} {row['herb']}")
+for i, row in tcm_screen.iterrows():
+    rf_s = f"{row.get('rf_score', 0):.3f}"
+    svm_s = f"{row.get('svm_score', 0):.3f}"
+    xgb_s = f"{row.get('xgb_score', 0):.3f}"
+    gcn_s = f"{row.get('gnn_gcn_score', 0):.3f}"
+    gat_s = f"{row.get('gnn_gat_score', 0):.3f}"
+    mpnn_s = f"{row.get('gnn_mpnn_score', 0):.3f}"
+    n_act = int(row['n_models_active'])
+    marker = " ***" if n_act >= 4 else " **" if n_act >= 3 else " *" if n_act >= 2 else ""
+    print(f"{i+1:<5} {row['name']:<25} {row['class']:<15} {row['avg_score']:>7.4f} {rf_s:>6} {svm_s:>6} {xgb_s:>6} {gcn_s:>6} {gat_s:>6} {mpnn_s:>6} {n_act:>5} {row['herb']}{marker}")
+
+# Summary
+n_active = (tcm_screen["n_models_active"] >= 3).sum()
+n_all_active = (tcm_screen["n_models_active"] >= 5).sum()
+print(f"\n{'='*80}")
+print(f"SUMMARY: {len(tcm_screen)} compounds screened")
+print(f"  Predicted active by 3+ models: {n_active}")
+print(f"  Predicted active by 5+ models: {n_all_active}")
+print(f"{'='*80}")
+
+# Save full results
+tcm_screen.to_csv("tcm_screening_results.csv", index=False)
+print(f"\nFull results saved: tcm_screening_results.csv")
 
 # Active predictions (score > 0.5)
 active_count = (tcm_screen["avg_score"] > 0.5).sum()
