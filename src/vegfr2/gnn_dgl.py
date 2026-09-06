@@ -139,7 +139,7 @@ class GCNConv(nn.Module):
 class GCN_DGL(nn.Module):
     """Graph Convolutional Network matching paper's architecture."""
 
-    def __init__(self, in_dim=45, hidden=64, layers=3, out_dim=1, dropout=0.3):
+    def __init__(self, in_dim=74, hidden=64, layers=3, out_dim=1, dropout=0.3):
         super().__init__()
         self.init_kwargs = {"in_dim": in_dim, "hidden": hidden, "layers": layers,
                             "out_dim": out_dim, "dropout": dropout}
@@ -215,7 +215,7 @@ class GATConv(nn.Module):
 class GAT_DGL(nn.Module):
     """Graph Attention Network matching paper's architecture."""
 
-    def __init__(self, in_dim=45, hidden=64, layers=3, heads=4, out_dim=1, dropout=0.3):
+    def __init__(self, in_dim=74, hidden=64, layers=3, heads=4, out_dim=1, dropout=0.3):
         super().__init__()
         self.init_kwargs = {"in_dim": in_dim, "hidden": hidden, "layers": layers,
                             "heads": heads, "out_dim": out_dim, "dropout": dropout}
@@ -277,7 +277,7 @@ class MPNNConv(nn.Module):
 class MPNN_DGL(nn.Module):
     """Message Passing Neural Network matching paper's architecture."""
 
-    def __init__(self, in_dim=45, hidden=64, layers=3, out_dim=1, edge_dim=11, dropout=0.3):
+    def __init__(self, in_dim=74, hidden=64, layers=3, out_dim=1, edge_dim=11, dropout=0.3):
         super().__init__()
         self.init_kwargs = {"in_dim": in_dim, "hidden": hidden, "layers": layers,
                             "out_dim": out_dim, "edge_dim": edge_dim, "dropout": dropout}
@@ -310,7 +310,7 @@ class MPNN_DGL(nn.Module):
 # Factory
 # ---------------------------------------------------------------------------
 
-def build_dgl_model(name: str, in_dim=45, hidden=64, layers=3, heads=4,
+def build_dgl_model(name: str, in_dim=74, hidden=64, layers=3, heads=4,
                     out_dim=1, edge_dim=11, dropout=0.3) -> nn.Module:
     """Build GNN model by name (matching paper's DGL models)."""
     name = name.lower()
@@ -414,7 +414,7 @@ def train_dgl_model(
             val_ds, batch_size=batch_size * 2, shuffle=False, collate_fn=collate_fn, num_workers=0
         )
 
-    model = build_dgl_model(name, in_dim=45, hidden=hidden, layers=layers, heads=heads).to(device)
+    model = build_dgl_model(name, in_dim=74, hidden=hidden, layers=layers, heads=heads).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     loss_fn = nn.BCEWithLogitsLoss()
 

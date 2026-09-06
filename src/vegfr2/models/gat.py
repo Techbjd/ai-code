@@ -21,7 +21,7 @@ class GAT_PyG(nn.Module):
 
     def __init__(
         self,
-        in_dim: int = 45,
+        in_dim: int = 74,
         hidden: int = 64,
         layers: int = 3,
         heads: int = 4,

@@ -45,7 +45,7 @@ __all__ = [
 
 def build_pyg_model(
     name: str,
-    in_dim: int = 45,
+    in_dim: int = 74,
     hidden: int = 64,
     layers: int = 3,
     heads: int = 4,
@@ -187,7 +187,7 @@ def train_gnn_pyg(
         val_ds = PlainPyGDataset(val_smiles, val_labels)
         val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
 
-    model = build_pyg_model(name, in_dim=45, hidden=hidden, layers=layers, heads=heads, edge_dim=11).to(device)
+    model = build_pyg_model(name, in_dim=74, hidden=hidden, layers=layers, heads=heads, edge_dim=11).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=lr)
     loss_fn = nn.BCEWithLogitsLoss()
 
@@ -273,7 +273,7 @@ def train_fused_variant(
     torch.manual_seed(seed)
     device = torch.device(device)
 
-    model = build_pyg_model(name, in_dim=45, hidden=hidden, layers=layers, heads=heads, edge_dim=11).to(device)
+    model = build_pyg_model(name, in_dim=74, hidden=hidden, layers=layers, heads=heads, edge_dim=11).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=lr)
     loss_fn = nn.BCEWithLogitsLoss()
 

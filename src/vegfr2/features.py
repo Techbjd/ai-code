@@ -10,14 +10,18 @@ import torch.nn.functional as F
 from rdkit import Chem
 from rdkit.Chem import rdFingerprintGenerator
 
-ATOM_SYMBOLS: list[str] = ['C', 'N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I', 'B', 'Si', 'Se']
-SYMBOL_CHOICES: list[str] = ATOM_SYMBOLS[:11] + ['other']
-HYBRIDIZATIONS: list[str] = ['SP', 'SP2', 'SP3', 'SP3D', 'SP3D2']
-DEGREE_SLOTS: list[int] = list(range(6))           # 0-5
-IMPLICIT_VALENCE_SLOTS: list[int] = list(range(6))  # 0-5
-CHARGE_CHOICES: list[int] = [-1, 0, 1, 'other']
-NUM_HS_SLOTS: list[int] = list(range(6))            # 0-5
-NUM_RADICAL_SLOTS: list[int] = list(range(4))       # 0-3
+# ---- DGL CanonicalAtomFeaturizer (exact match) ----
+# Source: github.com/awslabs/dgl-lifesci/python/dgllife/utils/featurizers.py
+DGL_ATOM_TYPES: list[str] = [
+    'C', 'N', 'O', 'S', 'F', 'Si', 'P', 'Cl', 'Br', 'Mg', 'Na', 'Ca',
+    'Fe', 'As', 'Al', 'I', 'B', 'V', 'K', 'Tl', 'Yb', 'Sb', 'Sn',
+    'Ag', 'Pd', 'Co', 'Se', 'Ti', 'Zn', 'H', 'Li', 'Ge', 'Cu', 'Au',
+    'Ni', 'Cd', 'In', 'Mn', 'Zr', 'Cr', 'Pt', 'Hg', 'Pb',
+]
+DGL_DEGREE_SLOTS: list[int] = list(range(11))       # 0-10
+DGL_IMPLICIT_VALENCE_SLOTS: list[int] = list(range(7))  # 0-6
+DGL_HYBRIDIZATIONS: list[str] = ['SP', 'SP2', 'SP3', 'SP3D', 'SP3D2']
+DGL_NUM_HS_SLOTS: list[int] = list(range(5))         # 0-4
 BOND_STEREO: list[str] = [
     'STEREONONE',
     'STEREOANY',
@@ -26,7 +30,7 @@ BOND_STEREO: list[str] = [
     'STEREOCIS',
     'STEREOTRANS',
 ]
-ATOM_FEAT_DIM: int = 45  # DGL CanonicalAtomFeaturizer style
+ATOM_FEAT_DIM: int = 74  # Exact DGL CanonicalAtomFeaturizer
 BOND_FEAT_DIM: int = 11
 
 _FP_CACHE: dict[str, dict[str, np.ndarray]] = {}
@@ -55,36 +59,39 @@ def clear_fp_cache() -> None:
 
 
 def _atom_features(atom: Chem.Atom) -> list[float]:
+    """Exact DGL CanonicalAtomFeaturizer (74-dim).
+
+    Source: dgllife/utils/featurizers.py
+    """
+    # 1. atom_type_one_hot: 43 elements
     symbol = atom.GetSymbol()
-    symbol_block = _one_hot(
-        symbol if symbol in SYMBOL_CHOICES else 'other', SYMBOL_CHOICES
-    )  # 12
-    degree_block = _one_hot(min(atom.GetDegree(), 5), DEGREE_SLOTS)  # 6
-    charge = atom.GetFormalCharge()
-    charge_block = _one_hot(
-        charge if charge in [-1, 0, 1] else 'other', CHARGE_CHOICES
-    )  # 4
-    num_hs = atom.GetTotalNumHs()
-    num_hs_block = _one_hot(min(num_hs, 5), NUM_HS_SLOTS)  # 6
-    hybridization = str(atom.GetHybridization())
-    hybridization_block = _one_hot(
-        hybridization if hybridization in HYBRIDIZATIONS else 'other',
-        HYBRIDIZATIONS + ['other'],
-    )  # 6
-    num_radicals = atom.GetNumRadicalElectrons()
-    radical_block = _one_hot(min(num_radicals, 3), NUM_RADICAL_SLOTS)  # 4
-    implicit_valence = atom.GetImplicitValence()
-    implicit_block = _one_hot(min(implicit_valence, 5), IMPLICIT_VALENCE_SLOTS)  # 6
-    aromatic_block = [int(atom.GetIsAromatic())]  # 1
+    type_block = _one_hot(symbol, DGL_ATOM_TYPES)  # 43
+
+    # 2. atom_degree_one_hot: 0-10
+    degree_block = _one_hot(min(atom.GetDegree(), 10), DGL_DEGREE_SLOTS)  # 11
+
+    # 3. atom_implicit_valence_one_hot: 0-6
+    impl_val = _one_hot(min(atom.GetImplicitValence(), 6), DGL_IMPLICIT_VALENCE_SLOTS)  # 7
+
+    # 4. atom_formal_charge: RAW int (not one-hot)
+    formal_charge = [float(atom.GetFormalCharge())]  # 1
+
+    # 5. atom_num_radical_electrons: RAW int (not one-hot)
+    radical_electrons = [float(atom.GetNumRadicalElectrons())]  # 1
+
+    # 6. atom_hybridization_one_hot: SP, SP2, SP3, SP3D, SP3D2
+    hyb = str(atom.GetHybridization())
+    hybrid_block = _one_hot(hyb, DGL_HYBRIDIZATIONS)  # 5
+
+    # 7. atom_is_aromatic: bool
+    aromatic = [float(atom.GetIsAromatic())]  # 1
+
+    # 8. atom_total_num_H_one_hot: 0-4
+    num_h = _one_hot(min(atom.GetTotalNumHs(), 4), DGL_NUM_HS_SLOTS)  # 5
+
     features = (
-        symbol_block
-        + degree_block
-        + charge_block
-        + num_hs_block
-        + hybridization_block
-        + radical_block
-        + implicit_block
-        + aromatic_block
+        type_block + degree_block + impl_val + formal_charge
+        + radical_electrons + hybrid_block + aromatic + num_h
     )
     assert len(features) == ATOM_FEAT_DIM, f'expected {ATOM_FEAT_DIM} atom features, got {len(features)}'
     return features

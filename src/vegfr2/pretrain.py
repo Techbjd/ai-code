@@ -99,7 +99,7 @@ class SelfSupervisedPretrainer:
         # Will be initialized in _build_model
         self.model: nn.Module | None = None
         self._pretrained = False
-        self.node_dim = 45  # DGL CanonicalAtomFeaturizer style
+        self.node_dim = 74  # DGL CanonicalAtomFeaturizer style
 
     def _build_base_model(self) -> nn.Module:
         """Build the base GNN model with hidden-dim output (not 1)."""
