@@ -146,9 +146,9 @@ def train_all_gnn():
         val_ds = MolDataset(val_df["smiles"].tolist(), val_df["active"].astype(int).tolist())
         test_ds = MolDataset(test_df["smiles"].tolist(), test_df["active"].astype(int).tolist())
 
-        train_loader = torch.utils.data.DataLoader(train_ds, batch_size=128, shuffle=True, collate_fn=collate_fn)
-        val_loader = torch.utils.data.DataLoader(val_ds, batch_size=256, shuffle=False, collate_fn=collate_fn)
-        test_loader = torch.utils.data.DataLoader(test_ds, batch_size=256, shuffle=False, collate_fn=collate_fn)
+        train_loader = torch.utils.data.DataLoader(train_ds, batch_size=128, shuffle=True, collate_fn=collate_fn, num_workers=0)
+        val_loader = torch.utils.data.DataLoader(val_ds, batch_size=256, shuffle=False, collate_fn=collate_fn, num_workers=0)
+        test_loader = torch.utils.data.DataLoader(test_ds, batch_size=256, shuffle=False, collate_fn=collate_fn, num_workers=0)
 
         model = build_dgl_model(model_name, in_dim=32, hidden=128, layers=3, heads=8, dropout=0.3).to(device)
         n_params = sum(p.numel() for p in model.parameters())

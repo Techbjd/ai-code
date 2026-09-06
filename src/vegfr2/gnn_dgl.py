@@ -348,9 +348,12 @@ def collate_fn(batch):
     valid_idx = []
     valid_smiles = []
     for i, s in enumerate(smiles):
-        if mol_to_graph(s) is not None:
-            valid_idx.append(i)
-            valid_smiles.append(s)
+        try:
+            if mol_to_graph(s) is not None:
+                valid_idx.append(i)
+                valid_smiles.append(s)
+        except Exception:
+            continue
 
     if not valid_smiles:
         return None, None
@@ -401,14 +404,14 @@ def train_dgl_model(
 
     train_ds = MolDataset(train_smiles, train_labels)
     train_loader = torch.utils.data.DataLoader(
-        train_ds, batch_size=batch_size, shuffle=True, collate_fn=collate_fn
+        train_ds, batch_size=batch_size, shuffle=True, collate_fn=collate_fn, num_workers=0
     )
 
     val_loader = None
     if val_smiles is not None:
         val_ds = MolDataset(val_smiles, val_labels)
         val_loader = torch.utils.data.DataLoader(
-            val_ds, batch_size=batch_size * 2, shuffle=False, collate_fn=collate_fn
+            val_ds, batch_size=batch_size * 2, shuffle=False, collate_fn=collate_fn, num_workers=0
         )
 
     model = build_dgl_model(name, in_dim=32, hidden=hidden, layers=layers, heads=heads).to(device)
