@@ -31,8 +31,10 @@ try:
     from torch_geometric.data import Data
     from torch_geometric.loader import DataLoader
     HAS_PYG = True
-except ImportError:
+except (ImportError, OSError):
     HAS_PYG = False
+    Data = None
+    DataLoader = None
 
 from vegfr2.features import mol_to_graph, smiles_to_morgan, combine_features
 from vegfr2.metrics import classification_metrics
