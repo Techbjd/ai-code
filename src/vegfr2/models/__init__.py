@@ -1,8 +1,4 @@
-"""VEGFR2 GNN model registry.
-
-Every model lives in its own file under ``vegfr2.models``.
-Import all models here for convenient access.
-"""
+"""VEGFR2 GNN model registry."""
 
 from functools import partial
 
@@ -14,7 +10,6 @@ from vegfr2.models.gin import GIN_PyG
 from vegfr2.models.pna import PNA_PyG
 from vegfr2.models.graph_transformer import GraphTransformer_PyG
 from vegfr2.models.attentive_fp import AttentiveFP
-from vegfr2.models.ensemble import GNNEnsembleClassifier
 from vegfr2.models.fused_gnn import FusedGIN, FusedGAT
 from vegfr2.models.fused_variants import FusedVariant
 
@@ -27,15 +22,11 @@ __all__ = [
     "PNA_PyG",
     "GraphTransformer_PyG",
     "AttentiveFP",
-    "GNNEnsembleClassifier",
     "FusedGIN",
     "FusedGAT",
     "FusedVariant",
 ]
 
-# ---------------------------------------------------------------------------
-# Enriched models (legacy, fingerprints baked into node features, in_dim=2246)
-# ---------------------------------------------------------------------------
 MODEL_REGISTRY: dict[str, type] = {
     "gcn": GCN_PyG,
     "gat": GAT_PyG,
@@ -47,17 +38,10 @@ MODEL_REGISTRY: dict[str, type] = {
     "attentive_fp": AttentiveFP,
 }
 
-# ---------------------------------------------------------------------------
-# Fused variant models (graph-only 32-dim + optional separate FP branch)
-# Naming: {gnn_type}_{fp_type}
-#   fp_type: graph_only, morgan, maccs, both
-# ---------------------------------------------------------------------------
 _VARIANT_GNNS = ["gcn", "gat", "gatv2", "gin", "mpnn", "attentive_fp"]
 _VARIANT_FP_TYPES = {
     "graph_only": 0,
     "morgan": 2048,
-    "maccs": 166,
-    "both": 2214,
 }
 
 for _gnn in _VARIANT_GNNS:
@@ -67,4 +51,3 @@ for _gnn in _VARIANT_GNNS:
             MODEL_REGISTRY[_key] = partial(FusedVariant, gnn_type=_gnn, fp_type="none", fp_dim=0)
         else:
             MODEL_REGISTRY[_key] = partial(FusedVariant, gnn_type=_gnn, fp_type=_fp_name, fp_dim=_fp_dim)
-

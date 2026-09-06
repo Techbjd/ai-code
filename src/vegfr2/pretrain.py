@@ -38,7 +38,7 @@ from torch import nn
 from torch_geometric.loader import DataLoader
 from torch_geometric.nn import global_mean_pool
 
-from vegfr2.features import mol_to_graph_with_fps
+from vegfr2.features import mol_to_graph
 from vegfr2.pretrain_models import (
     ContrastiveGNN,
     MaskedAtomGNN,
@@ -99,7 +99,7 @@ class SelfSupervisedPretrainer:
         # Will be initialized in _build_model
         self.model: nn.Module | None = None
         self._pretrained = False
-        self.node_dim = 2246  # 32 atom + 2048 morgan + 166 maccs
+        self.node_dim = 32  # plain graph atom features
 
     def _build_base_model(self) -> nn.Module:
         """Build the base GNN model with hidden-dim output (not 1)."""
@@ -194,7 +194,7 @@ class SelfSupervisedPretrainer:
         if verbose:
             print(f"  Model: {self.model_name} ({n_params:,} params)")
             print(f"  Method: {self.method}")
-            print(f"  Input: {self.node_dim}-dim enriched graphs")
+            print(f"  Input: {self.node_dim}-dim plain graphs")
 
         # Prepare data
         train_dataset = PretrainDataset(smiles_list)

@@ -1,9 +1,7 @@
 """GNN + ML Ensemble - Combine GNN embeddings with traditional ML.
 
 Uses a trained GNN to extract embeddings, then feeds them to XGBoost/RF
-for final prediction. This combines:
-- GNN: learns molecular graph patterns
-- XGBoost/RF: excels at tabular feature combination
+for final prediction.
 """
 
 from __future__ import annotations
@@ -16,7 +14,7 @@ from torch import Tensor, nn
 import torch.nn.functional as F
 from torch_geometric.nn import global_mean_pool
 
-from vegfr2.features import mol_to_graph_with_fps, smiles_to_morgan, smiles_to_maccs, combine_features
+from vegfr2.features import mol_to_graph, smiles_to_morgan, combine_features
 from vegfr2.ml_models import train_ml_model, predict_ml_model
 
 
@@ -28,18 +26,15 @@ class GNNEmbeddingExtractor(nn.Module):
         self.gnn = gnn_model
 
     def forward(self, x: Tensor, edge_index: Tensor, batch: Tensor) -> Tensor:
-        """Forward pass that returns pooled embeddings (before output layer)."""
         if hasattr(self.gnn, "node_emb"):
             x = F.relu(self.gnn.node_emb(x))
 
-        # GIN uses gin_convs + bn
         if hasattr(self.gnn, "gin_convs"):
             for i, (conv, bn) in enumerate(zip(self.gnn.gin_convs, self.gnn.bn)):
                 x = conv(x, edge_index)
                 x = bn(x)
                 if i < len(self.gnn.gin_convs) - 1:
                     x = F.relu(x)
-        # GCN/GAT/GATv2/GATv2 use convs + norms
         elif hasattr(self.gnn, "convs"):
             for i, conv in enumerate(self.gnn.convs):
                 x = conv(x, edge_index)
@@ -54,17 +49,16 @@ class GNNEmbeddingExtractor(nn.Module):
 class GNNEnsembleClassifier:
     """Ensemble of GNN + ML model.
 
-    Always uses enriched graphs (Morgan + MACCS + atom features).
-    Extracts GNN embeddings, combines with fingerprints, feeds to XGBoost/RF.
+    Extracts GNN embeddings, combines with Morgan fingerprints, feeds to XGBoost/RF.
 
     Args:
-        gnn_name: GNN model name ("gin", "pna", "graph_transformer", "gcn", "gat", "gatv2")
+        gnn_name: GNN model name
         ml_name: ML model name ("xgb", "rf", "svm")
         hidden: GNN hidden dimension
         layers: GNN layers
-        heads: Attention heads (for GAT/GATv2/Transformer)
+        heads: Attention heads
         dropout: Dropout rate
-        strategy: "concat" (feature concat) or "stack" (stacking)
+        strategy: "concat" or "stack"
     """
 
     def __init__(
@@ -91,8 +85,7 @@ class GNNEnsembleClassifier:
         self.ml_model = None
         self._fitted = False
 
-    def _build_gnn(self, in_dim: int, edge_dim: int = 11) -> nn.Module:
-        """Build GNN model by name."""
+    def _build_gnn(self, in_dim: int = 32, edge_dim: int = 11) -> nn.Module:
         from vegfr2.gnn_pyg import build_pyg_model
         return build_pyg_model(
             self.gnn_name,
@@ -111,7 +104,6 @@ class GNNEnsembleClassifier:
         device: torch.device,
         batch_size: int = 256,
     ) -> np.ndarray:
-        """Extract GNN embeddings for a list of SMILES."""
         from torch_geometric.data import Data
         from torch_geometric.loader import DataLoader
 
@@ -122,7 +114,7 @@ class GNNEnsembleClassifier:
             batch_smiles = smiles_list[i : i + batch_size]
             data_list = []
             for s in batch_smiles:
-                g = mol_to_graph_with_fps(s, use_morgan=True, use_maccs=True)
+                g = mol_to_graph(s)
                 data = Data(x=g["node_feats"], edge_index=g["edge_index"], edge_attr=g["edge_feats"])
                 data_list.append(data)
 
@@ -153,10 +145,8 @@ class GNNEnsembleClassifier:
         return np.vstack(embeddings)
 
     def _extract_fingerprints(self, smiles_list: list[str]) -> np.ndarray:
-        """Extract Morgan + MACCS fingerprints (always both)."""
-        morgan = np.vstack([smiles_to_morgan(s) for s in smiles_list])
-        maccs = np.vstack([smiles_to_maccs(s) for s in smiles_list])
-        return np.hstack([morgan, maccs])
+        """Extract Morgan fingerprints."""
+        return np.vstack([smiles_to_morgan(s) for s in smiles_list])
 
     def fit(
         self,
@@ -170,31 +160,19 @@ class GNNEnsembleClassifier:
         gnn_lr: float = 0.001,
         batch_size: int = 128,
     ) -> "GNNEnsembleClassifier":
-        """Fit the ensemble.
-
-        1. Train GNN on training data
-        2. Extract GNN embeddings
-        3. Combine with fingerprints
-        4. Train ML model on combined features
-        """
         device = torch.device(device)
         torch.manual_seed(self.seed)
 
-        # Determine input dimension (always enriched: 32 + 2048 + 166)
-        in_dim = 2246
-
-        # Step 1: Train GNN
-        self.gnn_model = self._build_gnn(in_dim=in_dim).to(device)
+        self.gnn_model = self._build_gnn(in_dim=32).to(device)
         opt = torch.optim.AdamW(self.gnn_model.parameters(), lr=gnn_lr, weight_decay=1e-4)
         loss_fn = nn.BCEWithLogitsLoss()
 
-        # Prepare PyG datasets
         from torch_geometric.data import Data
         from torch_geometric.loader import DataLoader
 
         train_data = []
         for s, y in zip(train_smiles, train_labels):
-            g = mol_to_graph_with_fps(s, use_morgan=True, use_maccs=True)
+            g = mol_to_graph(s)
             train_data.append(Data(x=g["node_feats"], edge_index=g["edge_index"], edge_attr=g["edge_feats"], y=torch.tensor([y], dtype=torch.float32)))
         train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True)
 
@@ -202,11 +180,10 @@ class GNNEnsembleClassifier:
         if val_smiles and val_labels:
             val_data = []
             for s, y in zip(val_smiles, val_labels):
-                g = mol_to_graph_with_fps(s, use_morgan=True, use_maccs=True)
+                g = mol_to_graph(s)
                 val_data.append(Data(x=g["node_feats"], edge_index=g["edge_index"], edge_attr=g["edge_feats"], y=torch.tensor([y], dtype=torch.float32)))
             val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False)
 
-        # Training loop
         best_auc = -1.0
         best_state = None
         wait = 0
@@ -247,21 +224,17 @@ class GNNEnsembleClassifier:
             self.gnn_model.load_state_dict(best_state)
         self.gnn_model.to(device)
 
-        # Step 2: Extract embeddings
         gnn_train_emb = self._extract_gnn_embeddings(self.gnn_model, train_smiles, device)
         fp_train = self._extract_fingerprints(train_smiles)
 
-        # Step 3: Combine features
         X_train = combine_features(gnn_train_emb, fp_train) if fp_train.shape[1] > 0 else gnn_train_emb
 
-        # Step 4: Train ML model
         self.ml_model = train_ml_model(self.ml_name, X_train, np.array(train_labels), seed=self.seed)
         self._fitted = True
 
         return self
 
     def predict_proba(self, smiles_list: list[str], device: str | torch.device = "cuda") -> np.ndarray:
-        """Predict probabilities for SMILES."""
         if not self._fitted:
             raise RuntimeError("Model not fitted. Call fit() first.")
 
@@ -274,12 +247,10 @@ class GNNEnsembleClassifier:
         return predict_ml_model(self.ml_model, X)
 
     def predict(self, smiles_list: list[str], device: str | torch.device = "cuda", threshold: float = 0.5) -> np.ndarray:
-        """Predict binary labels."""
         probs = self.predict_proba(smiles_list, device)
         return (probs >= threshold).astype(int)
 
     def save(self, path: str) -> None:
-        """Save ensemble to disk."""
         import pickle
         from pathlib import Path
 
@@ -304,7 +275,6 @@ class GNNEnsembleClassifier:
 
     @classmethod
     def load(cls, path: str, device: str | torch.device = "cpu") -> "GNNEnsembleClassifier":
-        """Load ensemble from disk."""
         import pickle
 
         with open(path, "rb") as f:
@@ -323,7 +293,7 @@ class GNNEnsembleClassifier:
         )
 
         if state["gnn_state"] is not None:
-            ensemble.gnn_model = ensemble._build_gnn(in_dim=2246).to(device)
+            ensemble.gnn_model = ensemble._build_gnn(in_dim=32).to(device)
             ensemble.gnn_model.load_state_dict(state["gnn_state"])
 
         ensemble.ml_model = state["ml_model"]

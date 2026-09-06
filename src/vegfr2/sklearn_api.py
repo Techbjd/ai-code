@@ -29,7 +29,7 @@ import torch.nn as nn
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
 
-from vegfr2.features import mol_to_graph, smiles_to_morgan, smiles_to_maccs, combine_features
+from vegfr2.features import mol_to_graph, smiles_to_morgan, combine_features
 from vegfr2.metrics import classification_metrics
 
 
@@ -43,9 +43,7 @@ class GNNClassifier:
     Wraps PyTorch Geometric GNN models with a fit/predict API
     that works with sklearn tools (cross_val_score, GridSearchCV, etc.).
 
-    ALL models use enriched graphs by default:
-    [atom(32) + Morgan(2048) + MACCS(166)] = 2246-dim input per node.
-    This gives the GNN fingerprint knowledge during message passing.
+    Uses plain graphs (32-dim atom features) following the paper's method.
 
     Args:
         model: GNN architecture name
@@ -95,7 +93,7 @@ class GNNClassifier:
         self._fitted = False
 
     def _get_input_dim(self) -> int:
-        return 2246  # 32 atom + 2048 morgan + 166 maccs
+        return 32  # plain graph atom features
 
     def _build_model(self, in_dim: int) -> nn.Module:
         from vegfr2.gnn_pyg import build_pyg_model
@@ -110,11 +108,11 @@ class GNNClassifier:
         )
 
     def _smiles_to_data(self, smiles_list: list[str], labels: list[int] | None = None) -> list[Data]:
-        from vegfr2.features import mol_to_graph_with_fps
+        from vegfr2.features import mol_to_graph
 
         data_list = []
         for i, s in enumerate(smiles_list):
-            g = mol_to_graph_with_fps(s, use_morgan=True, use_maccs=True)
+            g = mol_to_graph(s)
             y = labels[i] if labels is not None else 0
             data = Data(
                 x=g["node_feats"],
@@ -381,7 +379,7 @@ class GNNRegressor:
         from vegfr2.gnn_pyg import build_pyg_model
         return build_pyg_model(
             self.model_name,
-            in_dim=2246,
+            in_dim=32,
             hidden=self.hidden,
             layers=self.layers,
             heads=self.heads,
@@ -391,11 +389,11 @@ class GNNRegressor:
         )
 
     def _smiles_to_data(self, smiles_list: list[str], labels: list[float] | None = None) -> list[Data]:
-        from vegfr2.features import mol_to_graph_with_fps
+        from vegfr2.features import mol_to_graph
 
         data_list = []
         for i, s in enumerate(smiles_list):
-            g = mol_to_graph_with_fps(s, use_morgan=True, use_maccs=True)
+            g = mol_to_graph(s)
             y = labels[i] if labels is not None else 0.0
             data = Data(
                 x=g["node_feats"],
@@ -563,7 +561,7 @@ class EnsembleClassifier:
     """Sklearn-compatible GNN + ML ensemble classifier.
 
     Combines GNN embeddings with traditional ML (XGBoost/RF).
-    Always uses enriched graphs (Morgan + MACCS + atom features).
+    Uses plain graphs (32-dim atom features) following the paper's method.
 
     Args:
         gnn: GNN model name

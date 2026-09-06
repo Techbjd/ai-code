@@ -19,7 +19,7 @@ import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.nn import global_mean_pool
 
-from vegfr2.features import mol_to_graph_with_fps
+from vegfr2.features import mol_to_graph
 
 
 # ============================================================
@@ -225,7 +225,7 @@ class MaskedAtomGNN(nn.Module):
     Args:
         gnn: Base GNN model
         hidden_dim: GNN hidden dimension
-        atom_feat_dim: Atom feature dimension (2246 for enriched)
+        atom_feat_dim: Atom feature dimension (32 for plain graphs)
         mask_rate: Fraction of atoms to mask
     """
 
@@ -233,7 +233,7 @@ class MaskedAtomGNN(nn.Module):
         self,
         gnn: nn.Module,
         hidden_dim: int = 128,
-        atom_feat_dim: int = 2246,
+        atom_feat_dim: int = 32,
         mask_rate: float = 0.15,
     ):
         super().__init__()
@@ -343,27 +343,17 @@ class MaskedAtomGNN(nn.Module):
 class PretrainDataset(torch.utils.data.Dataset):
     """Dataset for self-supervised pre-training.
 
-    Converts SMILES to PyG Data objects with enriched features.
+    Converts SMILES to PyG Data objects with plain graph features (32-dim).
     """
 
     def __init__(
         self,
         smiles_list: list[str],
-        morgan_radius: int = 2,
-        morgan_n_bits: int = 2048,
-        maccs_n_bits: int = 166,
     ):
         self.data_list = []
         for s in smiles_list:
             try:
-                g = mol_to_graph_with_fps(
-                    s,
-                    use_morgan=True,
-                    use_maccs=True,
-                    morgan_radius=morgan_radius,
-                    morgan_n_bits=morgan_n_bits,
-                    maccs_n_bits=maccs_n_bits,
-                )
+                g = mol_to_graph(s)
                 data = Data(
                     x=g["node_feats"],
                     edge_index=g["edge_index"],
@@ -371,7 +361,7 @@ class PretrainDataset(torch.utils.data.Dataset):
                 )
                 self.data_list.append(data)
             except Exception:
-                continue  # skip invalid molecules
+                continue
 
     def __len__(self) -> int:
         return len(self.data_list)
