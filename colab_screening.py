@@ -30,12 +30,15 @@ print("Installing packages...")
 print("All packages ready!")
 
 # %%
-# @title 2. Clean + Clone Repository
+# @title 2. Clone Repository
 import sys
 import subprocess
 
 REPO_URL = "https://github.com/Techbjd/ai-code.git"
 REPO_DIR = "/content/ai-code"
+
+# Always work from /content (safe, never deleted)
+os.chdir("/content")
 
 # Remove old repo
 if os.path.exists(REPO_DIR):
@@ -48,24 +51,15 @@ result = subprocess.run(
     capture_output=True, text=True
 )
 if result.returncode != 0:
-    print(f"Clone failed: {result.stderr.strip()}")
-    print("Trying again...")
+    print(f"Clone failed, retrying...")
+    import time; time.sleep(2)
     result = subprocess.run(
         ["git", "clone", "--depth", "1", REPO_URL, REPO_DIR],
         capture_output=True, text=True
     )
-if result.returncode != 0:
-    print(f"Clone failed again: {result.stderr.strip()}")
-    print("Using existing repo if available...")
-    if not os.path.exists(REPO_DIR):
-        raise RuntimeError("Cannot clone repo. Check network connection.")
-else:
-    print("Repository cloned!")
-
-if os.path.exists(os.path.join(REPO_DIR, ".git")):
-    print("Repo verified!")
-else:
-    print("WARNING: Repo may be incomplete")
+if result.returncode != 0 or not os.path.exists(REPO_DIR):
+    raise RuntimeError(f"Cannot clone repo: {result.stderr.strip()}")
+print("Repository cloned!")
 
 sys.path.insert(0, os.path.join(REPO_DIR, "src"))
 os.chdir(REPO_DIR)
