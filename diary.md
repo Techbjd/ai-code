@@ -1,5 +1,57 @@
 # Diary
 
+## Session 4: NOVEL Dual-Graph GNN (Atom + Motif) for VEGFR2 (2026-09-06)
+
+### Goal
+Add a novel motif-level graph feature to improve GNN pattern finding for VEGFR2 virtual screening. This approach is NOT done in any VEGFR2 paper before — it captures higher-level chemical semantics (functional groups, rings) that pure atom-level GNNs miss.
+
+### Tasks Completed
+- [x] Added motif decomposition to `src/vegfr2/features.py` — decomposes SMILES into functional groups/rings using RDKit
+- [x] Added motif featurization (12-dim): 5 motif type one-hot + 7 chemical properties
+- [x] Added `mol_to_dual_graph()` — builds both atom graph AND motif graph from SMILES
+- [x] Added `DualGraphGNN` model to `src/vegfr2/gnn_dgl.py` — processes both graphs with cross-level attention fusion
+- [x] Added `DualMolDataset`, `dual_collate_fn`, `build_dual_model`, `predict_dual_model`
+- [x] Updated `colab_screening.py` to train and screen with 7 models (was 6)
+- [x] Fixed RDKit deprecation warnings in all files that import rdkit
+
+### Novel Approach (NOT done in VEGFR2 papers)
+- **Motif decomposition**: Extract rings, aromatic rings, heteroatom rings, functional groups, chains
+- **Motif graph**: Build second graph where nodes = motifs, edges = inter-motif connectivity
+- **Cross-level attention**: Fuse atom embeddings and motif embeddings via learned attention
+- **Dual encoding**: GCN processes atom graph separately from motif graph, then combines
+
+### Architecture
+```
+SMILES → Mol → [Atom Graph (74-dim)] → GCN → atom embeddings
+         ↓
+         [Motif Graph (12-dim)] → GCN → motif embeddings
+         ↓
+         Cross-level attention fusion → prediction
+```
+
+### Files Modified
+- `src/vegfr2/features.py` — Added: motif decomposition, dual graph construction, compact atom features (32-dim)
+- `src/vegfr2/gnn_dgl.py` — Added: DualGraphGNN model, dataset, collate functions, compact mode support
+- `colab_screening.py` — Updated: 7 models (was 6), dual model training + screening, USE_COMPACT toggle
+
+### Key Decisions
+- Used 12-dim motif features (5 type + 7 properties) to keep computation fast
+- Motif types: ring, functional group, chain, aromatic ring, heteroatom ring
+- Cross-level attention rather than simple concatenation for better fusion
+- Smaller batch size (64) for dual model due to motif decomposition overhead
+
+### What's Different from Other Papers
+- **FnGATGCN (Wang 2024)**: Morgan + GAT-GCN (no motifs)
+- **GEM-GNN (Xu 2024)**: 3D geometric features (no motifs)
+- **HimNet**: Hierarchical but uses PyTorch Geometric (we use pure PyTorch)
+- **DFusMol**: Motif graph but not for VEGFR2
+- **Our approach**: Motif-level graph + cross-level attention, pure PyTorch, VEGFR2-specific
+
+### Next Steps
+- Run `colab_screening.py` to test dual model performance
+- Compare DualGraphGNN AUC/MCC vs GCN/GAT/MPNN
+- If dual model performs well, it's a novel contribution for VEGFR2
+
 ## Session 3: TCMSP Bulk SMILES Fetch & Library Merge (2026-09-06)
 
 ### Goal

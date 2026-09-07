@@ -28,6 +28,9 @@ print("Installing packages...")
 %pip install -q rdkit torch xgboost scikit-learn pandas numpy requests
 
 print("All packages ready!")
+# Suppress RDKit C++ deprecation warnings
+from rdkit import RDLogger
+RDLogger.logger().setLevel(RDLogger.ERROR)
 
 # %%
 # @title 2. Clone Repository
@@ -124,6 +127,8 @@ load_csv = _mod_data.load_csv
 preprocess = _mod_data.preprocess
 split = _mod_data.split
 smiles_to_morgan = _mod_features.smiles_to_morgan
+ATOM_FEAT_DIM = _mod_features.ATOM_FEAT_DIM
+COMPACT_ATOM_FEAT_DIM = getattr(_mod_features, "COMPACT_ATOM_FEAT_DIM", 32)
 train_ml_model = _mod_ml.train_ml_model
 predict_ml_model = _mod_ml.predict_ml_model
 classification_metrics = _mod_metrics.classification_metrics
@@ -131,6 +136,16 @@ MolDataset = _mod_gnn.MolDataset
 collate_fn = _mod_gnn.collate_fn
 build_dgl_model = _mod_gnn.build_dgl_model
 predict_dgl_model = _mod_gnn.predict_dgl_model
+HAS_DUAL = hasattr(_mod_gnn, "DualMolDataset")
+if HAS_DUAL:
+    DualMolDataset = _mod_gnn.DualMolDataset
+    dual_collate_fn = _mod_gnn.dual_collate_fn
+    build_dual_model = _mod_gnn.build_dual_model
+    predict_dual_model = _mod_gnn.predict_dual_model
+    make_dual_collate_fn = _mod_gnn.make_dual_collate_fn
+    make_dual_collate_fn_predict = getattr(_mod_gnn, "make_dual_collate_fn_predict", None)
+else:
+    print("  NOTE: DualGraphGNN not available in this branch, skipping novel model")
 
 print("All modules loaded (bypassed torch_geometric).")
 
@@ -252,13 +267,14 @@ if len(X_train_morgan) == 0:
     raise ValueError("No valid Morgan fingerprints! Check SMILES data.")
 
 # %%
-# @title 6. Train 6 Models (Paper's method: RF, SVM, XGB, GCN, GAT, MPNN)
+# @title 6. Train 7 Models (Paper's method + NOVEL Dual-Graph GNN)
 import threading
 
 print("=" * 80)
-print("TRAINING 6 MODELS (Paper's exact method)")
+print("TRAINING 7 MODELS (Paper's method + NOVEL Dual-Graph GNN)")
 print("ML (CPU): RF+Morgan, SVM+Morgan, XGB+Morgan")
 print("GNN (GPU): GCN, GAT, MPNN (pure PyTorch, plain graphs, 74-dim)")
+print("NOVEL (GPU): DualGraphGNN (atom+motif, cross-level attention)")
 print("=" * 80)
 
 results = {}
@@ -287,7 +303,7 @@ def train_all_ml():
 
 
 def train_all_gnn():
-    """Train 3 GNN models on plain graphs (GPU, pure PyTorch)."""
+    """Train 3 GNN models + 1 DualGraph model on plain graphs (GPU, pure PyTorch)."""
     import torch.nn as nn
 
     def train_gnn(model_name, train_df, val_df, test_df, device, epochs=100, patience=15):
@@ -388,6 +404,113 @@ def train_all_gnn():
         except Exception as e:
             print(f"  ERROR training GNN_{name}: {e}")
             train_errors.append(f"gnn_{name}: {e}")
+
+    # --- NOVEL: Dual-Graph GNN (atom + motif) ---
+    # Set USE_COMPACT=True to test 32-dim atom features (faster, less memory)
+    # Set USE_COMPACT=False for full 74-dim atom features
+    USE_COMPACT = True  # Toggle this to compare
+    atom_dim_str = f"{COMPACT_ATOM_FEAT_DIM}-dim" if USE_COMPACT else f"{ATOM_FEAT_DIM}-dim"
+    print(f"\n--- Training NOVEL DualGraphGNN (atom+motif, {atom_dim_str} atoms) ---")
+    try:
+        torch.manual_seed(42)
+
+        dual_collate = make_dual_collate_fn(compact=USE_COMPACT)
+        dual_collate_pred = make_dual_collate_fn_predict(compact=USE_COMPACT)
+
+        train_ds = DualMolDataset(train_df["smiles"].tolist(), train_df["active"].astype(int).tolist())
+        val_ds = DualMolDataset(val_df["smiles"].tolist(), val_df["active"].astype(int).tolist())
+        test_ds = DualMolDataset(test_df["smiles"].tolist(), test_df["active"].astype(int).tolist())
+
+        train_loader = torch.utils.data.DataLoader(train_ds, batch_size=64, shuffle=True, collate_fn=dual_collate, num_workers=0)
+        val_loader = torch.utils.data.DataLoader(val_ds, batch_size=128, shuffle=False, collate_fn=dual_collate, num_workers=0)
+        test_loader = torch.utils.data.DataLoader(test_ds, batch_size=128, shuffle=False, collate_fn=dual_collate, num_workers=0)
+
+        model = build_dual_model(hidden=128, layers=3, heads=4, dropout=0.3, compact=USE_COMPACT).to(DEVICE)
+        n_params = sum(p.numel() for p in model.parameters())
+        print(f"  Model: DualGraphGNN ({n_params:,} params)")
+
+        opt = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=100, eta_min=1e-6)
+
+        n_active = train_df["active"].sum()
+        n_inactive = len(train_df) - n_active
+        pos_weight = torch.tensor([n_inactive / max(n_active, 1)], device=DEVICE)
+        loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
+        best_auc = -1.0
+        best_state = None
+        wait = 0
+
+        for epoch in range(1, 101):
+            model.train()
+            for atom_g, motif_g, a2m, batch_labels in train_loader:
+                if atom_g is None:
+                    continue
+                atom_g = atom_g.to(DEVICE)
+                motif_g = motif_g.to(DEVICE)
+                a2m = a2m.to(DEVICE)
+                batch_labels = batch_labels.to(DEVICE)
+                logits = model(atom_g, atom_g.x, motif_g, motif_g.x, a2m)
+                loss = loss_fn(logits.squeeze(), batch_labels.squeeze())
+                opt.zero_grad()
+                loss.backward()
+                opt.step()
+            scheduler.step()
+
+            model.eval()
+            val_probs, val_true = [], []
+            with torch.no_grad():
+                for atom_g, motif_g, a2m, batch_labels in val_loader:
+                    if atom_g is None:
+                        continue
+                    atom_g = atom_g.to(DEVICE)
+                    motif_g = motif_g.to(DEVICE)
+                    a2m = a2m.to(DEVICE)
+                    logits = model(atom_g, atom_g.x, motif_g, motif_g.x, a2m)
+                    val_probs.extend(torch.sigmoid(logits).squeeze().cpu().numpy())
+                    val_true.extend(batch_labels.squeeze().numpy().astype(int))
+
+            if len(val_probs) == 0 or len(val_true) == 0:
+                continue
+
+            val_auc = classification_metrics(val_true, val_probs).get("auc") or 0.0
+
+            if val_auc > best_auc:
+                best_auc = val_auc
+                best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+                wait = 0
+            else:
+                wait += 1
+                if wait >= 15:
+                    print(f"  Early stop at epoch {epoch}")
+                    break
+
+            if epoch % 25 == 0:
+                print(f"  Epoch {epoch:3d} val_AUC={val_auc:.4f}")
+
+        if best_state is not None:
+            model.load_state_dict(best_state)
+        model.to(DEVICE).eval()
+
+        test_probs, test_true = [], []
+        with torch.no_grad():
+            for atom_g, motif_g, a2m, batch_labels in test_loader:
+                if atom_g is None:
+                    continue
+                atom_g = atom_g.to(DEVICE)
+                motif_g = motif_g.to(DEVICE)
+                a2m = a2m.to(DEVICE)
+                logits = model(atom_g, atom_g.x, motif_g, motif_g.x, a2m)
+                test_probs.extend(torch.sigmoid(logits).squeeze().cpu().numpy())
+                test_true.extend(batch_labels.squeeze().numpy().astype(int))
+
+        metrics = classification_metrics(test_true, test_probs)
+        results["gnn_dual"] = metrics
+        models_gnn["dual"] = model
+        print(f"  AUC={metrics.get('auc', 0):.4f} ACC={metrics['acc']:.4f} MCC={metrics['mcc']:.4f}")
+    except Exception as e:
+        print(f"  ERROR training DualGraphGNN: {e}")
+        train_errors.append(f"gnn_dual: {e}")
 
     print("\nGNN training complete")
 
@@ -534,7 +657,10 @@ except Exception as e:
 for name in list(models_gnn.keys()):
     try:
         model = models_gnn[name]
-        all_probs = predict_dgl_model(model, tcm_df["smiles"].tolist(), device=DEVICE)
+        if name == "dual":
+            all_probs = predict_dual_model(model, tcm_df["smiles"].tolist(), device=DEVICE, compact=USE_COMPACT)
+        else:
+            all_probs = predict_dgl_model(model, tcm_df["smiles"].tolist(), device=DEVICE)
         screening_results[f"gnn_{name}_score"] = np.array(all_probs)
         screening_results[f"gnn_{name}_label"] = (screening_results[f"gnn_{name}_score"] > 0.5).astype(int)
         print(f"  GNN_{name.upper()}: done")
@@ -665,7 +791,10 @@ else:
     for name in list(models_gnn.keys()):
         try:
             model = models_gnn[name]
-            probs = predict_dgl_model(model, tcm_valid["canonical_smiles"].tolist(), device=DEVICE)
+            if name == "dual":
+                probs = predict_dual_model(model, tcm_valid["canonical_smiles"].tolist(), device=DEVICE, compact=USE_COMPACT)
+            else:
+                probs = predict_dgl_model(model, tcm_valid["canonical_smiles"].tolist(), device=DEVICE)
             tcm_screen[f"gnn_{name}_score"] = probs
             print(f"  GNN_{name.upper()}: done")
         except Exception as e:
@@ -692,8 +821,8 @@ if len(tcm_valid) > 0 and 'tcm_screen' in dir() and not tcm_screen.empty:
     print("=" * 80)
 
     # Build column data dynamically
-    col_names = ["rf_score", "svm_score", "xgb_score", "gnn_gcn_score", "gnn_gat_score", "gnn_mpnn_score"]
-    col_short = ["RF", "SVM", "XGB", "GCN", "GAT", "MPNN"]
+    col_names = ["rf_score", "svm_score", "xgb_score", "gnn_gcn_score", "gnn_gat_score", "gnn_mpnn_score", "gnn_dual_score"]
+    col_short = ["RF", "SVM", "XGB", "GCN", "GAT", "MPNN", "Dual"]
     available = [(cn, cs) for cn, cs in zip(col_names, col_short) if cn in tcm_screen.columns]
 
     header = f"{'Rank':<5} {'Molecule':<25} {'Class':<15} {'Avg':>7}"
@@ -760,14 +889,15 @@ print("PIPELINE COMPLETE")
 print("=" * 80)
 
 print(f"""
-SUMMARY (Hou et al. 2025 reproduction):
------------------------------------------
+SUMMARY (Hou et al. 2025 reproduction + NOVEL Dual-Graph GNN):
+--------------------------------------------------------------
 1. Data: ChEMBL279 VEGFR2, {len(df)} compounds
 2. Split: Stratified 8:1:1 (train/val/test), seed=42
-3. Models trained: {len(results)}/6 (ML: {len(models_ml)}, GNN: {len(models_gnn)})
+3. Models trained: {len(results)}/7 (ML: {len(models_ml)}, GNN: {len(models_gnn)})
 4. GNN: plain graphs (74-dim) via pure PyTorch
-5. ML: Morgan fingerprints (r=2, 2048-bit)
-6. TCM screening: {len(tcm_valid) if len(tcm_valid) > 0 else 0} compounds
+5. NOVEL: DualGraphGNN (atom+motif, cross-level attention)
+6. ML: Morgan fingerprints (r=2, 2048-bit)
+7. TCM screening: {len(tcm_valid) if len(tcm_valid) > 0 else 0} compounds
 
 Paper's top 3 hits (experimentally validated):
   1. Cynaroside (IC50=2698 nM, 89.7% inhibition)

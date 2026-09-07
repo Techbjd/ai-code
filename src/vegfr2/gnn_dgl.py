@@ -57,7 +57,8 @@ class BatchedGraph:
 
 def mol_to_graph(smiles: str):
     """Convert SMILES to (node_feats, edge_index) using RDKit."""
-    from rdkit import Chem
+    from rdkit import Chem, RDLogger
+    RDLogger.logger().setLevel(RDLogger.ERROR)
     from vegfr2.features import _atom_features, _bond_features
 
     mol = Chem.MolFromSmiles(smiles)
@@ -320,8 +321,10 @@ def build_dgl_model(name: str, in_dim=74, hidden=64, layers=3, heads=4,
         return GAT_DGL(in_dim=in_dim, hidden=hidden, layers=layers, heads=heads, out_dim=out_dim, dropout=dropout)
     elif name == "mpnn":
         return MPNN_DGL(in_dim=in_dim, hidden=hidden, layers=layers, out_dim=out_dim, edge_dim=edge_dim, dropout=dropout)
+    elif name == "dual":
+        return DualGraphGNN(atom_dim=74, motif_dim=12, hidden=hidden, layers=layers, heads=heads, out_dim=out_dim, dropout=dropout)
     else:
-        raise ValueError(f"Unknown model: {name}. Available: gcn, gat, mpnn")
+        raise ValueError(f"Unknown model: {name}. Available: gcn, gat, mpnn, dual")
 
 
 # ---------------------------------------------------------------------------
@@ -521,6 +524,318 @@ def predict_dgl_model(
                             batch_probs[idx] = float(probs[k])
             except Exception:
                 pass  # Keep 0.5 defaults
+
+        all_probs.extend(batch_probs)
+
+    return np.array(all_probs)
+
+
+# ---------------------------------------------------------------------------
+# Dual-Graph GNN (Atom + Motif) — NOVEL for VEGFR2
+# Processes both atom-level and motif-level graphs,
+# combines via cross-level attention fusion.
+# ---------------------------------------------------------------------------
+
+class DualGraphGNN(nn.Module):
+    """Dual-graph GNN: atom graph + motif graph with cross-level attention.
+
+    Novel approach for VEGFR2 virtual screening.
+    Captures both fine-grained atom patterns AND higher-level chemical motifs.
+    """
+
+    def __init__(self, atom_dim=74, motif_dim=12, hidden=128, layers=3,
+                 heads=4, dropout=0.3, out_dim=1):
+        super().__init__()
+        self.hidden = hidden
+        self.heads = heads
+
+        # Atom-level encoder (GCN)
+        self.atom_convs = nn.ModuleList()
+        self.atom_norms = nn.ModuleList()
+        self.atom_convs.append(GCNConv(atom_dim, hidden))
+        for _ in range(layers - 1):
+            self.atom_convs.append(GCNConv(hidden, hidden))
+        for _ in range(layers):
+            self.atom_norms.append(nn.LayerNorm(hidden))
+
+        # Motif-level encoder (GCN)
+        self.motif_convs = nn.ModuleList()
+        self.motif_norms = nn.ModuleList()
+        self.motif_convs.append(GCNConv(motif_dim, hidden))
+        for _ in range(layers - 1):
+            self.motif_convs.append(GCNConv(hidden, hidden))
+        for _ in range(layers):
+            self.motif_norms.append(nn.LayerNorm(hidden))
+
+        # Cross-level attention: atom → motif
+        self.cross_attn_W = nn.Linear(hidden * 2, heads)
+        self.cross_attn_V = nn.Linear(hidden, hidden)
+
+        # Fusion layer
+        self.fusion = nn.Sequential(
+            nn.Linear(hidden * 2, hidden),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden, hidden),
+        )
+
+        self.output = nn.Linear(hidden, out_dim)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, atom_graph, atom_feats, motif_graph, motif_feats,
+                atom_to_motif_batch):
+        """Forward pass on dual graph.
+
+        Args:
+            atom_graph: BatchedGraph for atoms
+            atom_feats: [total_atoms, atom_dim]
+            motif_graph: BatchedGraph for motifs
+            motif_feats: [total_motifs, motif_dim]
+            atom_to_motif_batch: [total_atoms] mapping each atom to its motif index
+        """
+        # --- Atom-level encoding ---
+        h_atom = atom_feats
+        for i, (conv, norm) in enumerate(zip(self.atom_convs, self.atom_norms)):
+            h_atom = conv(atom_graph, h_atom)
+            h_atom = norm(h_atom)
+            if i < len(self.atom_convs) - 1:
+                h_atom = F.relu(h_atom)
+                h_atom = self.dropout(h_atom)
+
+        # --- Motif-level encoding ---
+        h_motif = motif_feats
+        for i, (conv, norm) in enumerate(zip(self.motif_convs, self.motif_norms)):
+            h_motif = conv(motif_graph, h_motif)
+            h_motif = norm(h_motif)
+            if i < len(self.motif_convs) - 1:
+                h_motif = F.relu(h_motif)
+                h_motif = self.dropout(h_motif)
+
+        # --- Cross-level attention fusion ---
+        # Pool atom embeddings per motif (mean)
+        num_motifs = motif_graph.num_graphs
+        atom_pooled = scatter_mean(h_atom, atom_to_motif_batch, num_motifs)
+
+        # Attention between pooled atoms and motif embeddings
+        combined = torch.cat([atom_pooled, h_motif], dim=-1)  # [num_motifs, hidden*2]
+        attn_scores = self.cross_attn_W(combined)  # [num_motifs, heads]
+        attn_scores = F.softmax(attn_scores, dim=0)  # [num_motifs, heads]
+        attn_scores = attn_scores.mean(dim=-1, keepdim=True)  # [num_motifs, 1]
+
+        # Weighted combination
+        h_motif_attended = h_motif * attn_scores + atom_pooled * (1 - attn_scores)
+
+        # --- Fusion and prediction ---
+        # Concatenate atom and motif representations
+        hg_atom = scatter_mean(h_atom, atom_graph.batch, atom_graph.num_graphs)
+        hg_motif = scatter_mean(h_motif_attended, motif_graph.batch, num_motifs)
+
+        hg = torch.cat([hg_atom, hg_motif], dim=-1)  # [batch, hidden*2]
+        hg = self.fusion(hg)  # [batch, hidden]
+
+        return self.output(hg)
+
+
+class DualMolDataset:
+    """Dataset for dual-graph (atom + motif) processing."""
+
+    def __init__(self, smiles_list: list[str], labels: list[int]):
+        self.smiles = smiles_list
+        self.labels = labels
+
+    def __len__(self):
+        return len(self.smiles)
+
+    def __getitem__(self, idx):
+        return self.smiles[idx], self.labels[idx]
+
+
+def make_dual_collate_fn(compact=False):
+    """Create a dual collate function with compact mode setting."""
+    def collate_fn(batch):
+        from vegfr2.features import mol_to_dual_graph
+        smiles, labels = zip(*batch)
+        valid_idx = []
+        valid_graphs = []
+        for i, s in enumerate(smiles):
+            try:
+                dg = mol_to_dual_graph(s, compact=compact)
+                if dg is not None:
+                    valid_idx.append(i)
+                    valid_graphs.append(dg)
+            except Exception:
+                continue
+        if not valid_graphs:
+            return None, None, None
+        return _build_dual_batch(valid_graphs, [labels[i] for i in valid_idx])
+    return collate_fn
+
+
+def make_dual_collate_fn_predict(compact=False):
+    """Create a dual collate predict function with compact mode setting."""
+    def collate_fn(batch):
+        from vegfr2.features import mol_to_dual_graph
+        smiles = batch
+        valid_idx = []
+        valid_graphs = []
+        for i, s in enumerate(smiles):
+            try:
+                dg = mol_to_dual_graph(s, compact=compact)
+                if dg is not None:
+                    valid_idx.append(i)
+                    valid_graphs.append(dg)
+            except Exception:
+                continue
+        if not valid_graphs:
+            return None, None, None, valid_idx
+        return _build_dual_batch_predict(valid_graphs, valid_idx)
+    return collate_fn
+
+
+def _build_dual_batch(valid_graphs, labels):
+    """Internal: build batched dual graphs."""
+    atom_x_list, atom_ei_list, atom_batch_list = [], [], []
+    motif_x_list, motif_ei_list, motif_batch_list = [], [], []
+    atom_to_motif_list = []
+    atom_offset = 0
+    motif_offset = 0
+    for i, dg in enumerate(valid_graphs):
+        n_atoms = dg['num_atom_nodes']
+        n_motifs = dg['num_motif_nodes']
+        atom_x_list.append(dg['atom_node_feats'])
+        atom_ei_list.append(dg['atom_edge_index'] + atom_offset)
+        atom_batch_list.append(torch.full((n_atoms,), i, dtype=torch.long))
+        motif_x_list.append(dg['motif_node_feats'])
+        motif_ei_list.append(dg['motif_edge_index'] + motif_offset)
+        motif_batch_list.append(torch.full((n_motifs,), i, dtype=torch.long))
+        a2m = dg['atom_to_motif']
+        atom_to_motif_list.append(
+            torch.tensor([a2m.get(a, 0) + motif_offset for a in range(n_atoms)], dtype=torch.long)
+        )
+        atom_offset += n_atoms
+        motif_offset += n_motifs
+    atom_graph = BatchedGraph(
+        node_feats=torch.cat(atom_x_list, dim=0),
+        edge_index=torch.cat(atom_ei_list, dim=1),
+        batch_vec=torch.cat(atom_batch_list, dim=0),
+        num_nodes=atom_offset,
+        num_edges=sum(e.size(1) for e in atom_ei_list),
+    )
+    motif_graph = BatchedGraph(
+        node_feats=torch.cat(motif_x_list, dim=0),
+        edge_index=torch.cat(motif_ei_list, dim=1),
+        batch_vec=torch.cat(motif_batch_list, dim=0),
+        num_nodes=motif_offset,
+        num_edges=sum(e.size(1) for e in motif_ei_list),
+    )
+    atom_to_motif_batch = torch.cat(atom_to_motif_list, dim=0)
+    labels_tensor = torch.tensor(labels, dtype=torch.float32)
+    return atom_graph, motif_graph, atom_to_motif_batch, labels_tensor.unsqueeze(1)
+
+
+def _build_dual_batch_predict(valid_graphs, valid_idx):
+    """Internal: build batched dual graphs for prediction."""
+    atom_x_list, atom_ei_list, atom_batch_list = [], [], []
+    motif_x_list, motif_ei_list, motif_batch_list = [], [], []
+    atom_to_motif_list = []
+    atom_offset = 0
+    motif_offset = 0
+    for i, dg in enumerate(valid_graphs):
+        n_atoms = dg['num_atom_nodes']
+        n_motifs = dg['num_motif_nodes']
+        atom_x_list.append(dg['atom_node_feats'])
+        atom_ei_list.append(dg['atom_edge_index'] + atom_offset)
+        atom_batch_list.append(torch.full((n_atoms,), i, dtype=torch.long))
+        motif_x_list.append(dg['motif_node_feats'])
+        motif_ei_list.append(dg['motif_edge_index'] + motif_offset)
+        motif_batch_list.append(torch.full((n_motifs,), i, dtype=torch.long))
+        a2m = dg['atom_to_motif']
+        atom_to_motif_list.append(
+            torch.tensor([a2m.get(a, 0) + motif_offset for a in range(n_atoms)], dtype=torch.long)
+        )
+        atom_offset += n_atoms
+        motif_offset += n_motifs
+    atom_graph = BatchedGraph(
+        node_feats=torch.cat(atom_x_list, dim=0),
+        edge_index=torch.cat(atom_ei_list, dim=1),
+        batch_vec=torch.cat(atom_batch_list, dim=0),
+        num_nodes=atom_offset,
+        num_edges=sum(e.size(1) for e in atom_ei_list),
+    )
+    motif_graph = BatchedGraph(
+        node_feats=torch.cat(motif_x_list, dim=0),
+        edge_index=torch.cat(motif_ei_list, dim=1),
+        batch_vec=torch.cat(motif_batch_list, dim=0),
+        num_nodes=motif_offset,
+        num_edges=sum(e.size(1) for e in motif_ei_list),
+    )
+    atom_to_motif_batch = torch.cat(atom_to_motif_list, dim=0)
+    return atom_graph, motif_graph, atom_to_motif_batch, valid_idx
+
+
+def dual_collate_fn(batch):
+    """Collate for dual-graph processing (74-dim default)."""
+    return make_dual_collate_fn(compact=False)(batch)
+
+
+def dual_collate_fn_predict(batch):
+    """Collate for dual-graph prediction (74-dim default)."""
+    return make_dual_collate_fn_predict(compact=False)(batch)
+
+
+def build_dual_model(hidden=128, layers=3, heads=4, dropout=0.3, compact=False) -> nn.Module:
+    """Build dual-graph GNN model.
+
+    Args:
+        compact: If True, use 32-dim compact atom features instead of 74-dim.
+    """
+    from vegfr2.features import ATOM_FEAT_DIM, COMPACT_ATOM_FEAT_DIM
+    atom_dim = COMPACT_ATOM_FEAT_DIM if compact else ATOM_FEAT_DIM
+    return DualGraphGNN(
+        atom_dim=atom_dim, motif_dim=12, hidden=hidden,
+        layers=layers, heads=heads, dropout=dropout, out_dim=1,
+    )
+
+
+def predict_dual_model(
+    model: nn.Module,
+    smiles_list: list[str],
+    batch_size: int = 256,
+    device: str | torch.device = "cuda",
+    compact: bool = False,
+) -> np.ndarray:
+    """Predict probabilities using dual-graph model.
+
+    Args:
+        compact: If True, use 32-dim compact atom features.
+    """
+    device = torch.device(device)
+    model.eval()
+
+    collate_pred = make_dual_collate_fn_predict(compact=compact)
+    all_probs = []
+    all_valid_idx = []
+
+    for i in range(0, len(smiles_list), batch_size):
+        batch = smiles_list[i:i + batch_size]
+        atom_g, motif_g, a2m, valid_idx = collate_pred(batch)
+
+        batch_probs = [0.5] * len(batch)
+        if atom_g is not None:
+            try:
+                atom_g = atom_g.to(device)
+                motif_g = motif_g.to(device)
+                a2m = a2m.to(device)
+                with torch.no_grad():
+                    logits = model(atom_g, atom_g.x, motif_g, motif_g.x, a2m)
+                    probs = torch.sigmoid(logits).squeeze().cpu().numpy()
+                if probs.ndim == 0:
+                    probs = [probs.item()]
+                for k, idx in enumerate(valid_idx):
+                    if k < len(probs):
+                        batch_probs[idx] = float(probs[k])
+            except Exception:
+                pass
 
         all_probs.extend(batch_probs)
 

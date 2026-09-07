@@ -6,8 +6,10 @@ from pathlib import Path
 from typing import Union
 
 import pandas as pd
-from rdkit import Chem
+from rdkit import Chem, RDLogger
 from sklearn.model_selection import train_test_split
+
+RDLogger.logger().setLevel(RDLogger.ERROR)
 
 PathLike = Union[str, Path]
 
